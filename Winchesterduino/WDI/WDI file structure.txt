@@ -1,0 +1,66 @@
+Winchesterduino "WDI" file structure. Consists of 3 sequential sections, in this order:
+
+section 1) ASCII header and text description of variable size.
+           Allowed byte content 0x20 to 0x7E.
+           Byte 0x1A indicates end of this section.
+           
+section 2) Source drive information. 32 bytes.
+           byte 0:  Data encoding type (0: MFM, 1: RLL).
+           byte 1:  Data verify type (0: 16-bit CRC, 1: 32-bit ECC, 2: 56-bit ECC).
+           byte 2:  LSB of total physical cylinders of drive.
+           byte 3:  MSB of total physical cylinders of drive.
+           byte 4:  Total physical heads of drive.
+           byte 5:  Write precompensation enabled (0: no, 1: yes).
+           byte 6:  LSB of write precompensation starting cylinder.
+           byte 7:  MSB of write precompensation starting cylinder.
+           byte 8:  Reduced write current enabled (if heads <= 8).
+           byte 9:  LSB of reduced write current starting cylinder.
+           byte 10: MSB of reduced write current starting cylinder.
+           byte 11: Heads landing zone specified (0: drive has auto-parking, 1: yes)
+           byte 12: LSB of landing zone cylinder.
+           byte 13: MSB of landing zone cylinder.
+           byte 14: ST-506 compatible seek. 0: use buffered seek.
+           bytes 15-31: Reserved, 0.                      
+           
+section 3) Track data fields. One field after the other, for each track on drive.           
+
+***
+
+Structure of a 1 track data field:
+           byte 0: LSB of this track's physical cylinder number.
+           byte 1: MSB of this track's physical cylinder number.
+                   Allowed values 0 to 7.
+                   0x1A here can also indicate end of file, and to ignore everything thereafter.
+           byte 2: Physical head number of this track.
+           byte 3: Number of sectors of this track.
+                   0: the whole track was unreadable. Indicates end of this track's data field.
+           Sector numbering map, in the order as it physically appears on disk.
+                   Size 4 bytes * number of sectors of this track.
+           Sector data records.
+                   Count: number of sectors of this track.
+                   Size of each: 1 byte, or 2 bytes, or (number of sectors+1) bytes, as below.
+
+Structure of a sector numbering map, per 1 sector:
+           byte 0: LSB of the logical cylinder number.           
+           byte 1: MSB of the logical cylinder number.
+           byte 2: Logical sector number.
+           byte 3: WD "SDH byte", see below.           
+
+Structure of a 1 sector data record:
+           byte 0: Data type. Allowed values:
+                   0: Sector unreadable, or bad block. No data. This sector data record ends.
+                   1 or 0x81: Sector read OK. Data byte(s) follow.
+                   2 or 0x82: Sector read with CRC or ECC error that could not be corrected. Data byte(s) follow.
+                              Type of error (CRC or ECC) depends on value of byte 1 in section 2.
+                              If all sectors read this value, the data verify type might have been improperly set.
+                   For values 1 and 2, bit 7=1 indicates the data is compressed (all bytes in the sector have the same value).
+           byte 1: If data is compressed, this is the byte value what to fill the sector with. Otherwise:
+           bytes 1 to sector size: Raw data of this sector.
+
+Winchester disk controller "SDH byte":
+          Original bits 7 (ECC mode on/bad block) and 4 (drive select) set to 0 and ignored.
+          Whether a sector contains valid data is flagged inside the sector data record.
+          bit 6: Sector size 1 "SS1",
+          bit 5: Sector size 0 "SS0". Combinations:
+          SS1,SS0: 00 (256 bytes), 01 (512 bytes), 10 (1024 bytes), 11 (128 bytes).
+          bits 3-0: Logical head number.
