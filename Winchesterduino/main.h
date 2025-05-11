@@ -12,4 +12,4 @@ DWORD* CalculateSectorsPerTrack(BYTE sdh,
                                 BYTE& sectorsPerTrack, WORD& tableCount,
                                 bool& headMismatch, bool& cylinderMismatch, bool& variableSectorSize);
 
-BYTE CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sectorsPerTrack);
+bool CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sectorsPerTrack, BYTE& result);

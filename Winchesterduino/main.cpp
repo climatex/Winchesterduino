@@ -561,18 +561,30 @@ void CommandAnalyze()
       cylinderMismatch |= thisCylinderMismatch;
       
       const WORD sectorSize = wdc->getSectorSizeFromSDH(sdh);
-      const BYTE interleave = CalculateInterleave(sectorsTable, tableCount, sectorsPerTrack);
+      BYTE interleave;
+      const bool interleaveKnown = CalculateInterleave(sectorsTable, tableCount, sectorsPerTrack, interleave);
       
       // print out info
       ui->print(Progmem::getString(Progmem::uiCHInfo), cylinder, head);
       if (!thisVariableSectorSize)
       {
-        ui->print(Progmem::getString(Progmem::analyzeSectorInfo), sectorsPerTrack, sectorSize, interleave);  
+        ui->print(Progmem::getString(Progmem::analyzeSectorInfo), sectorsPerTrack, sectorSize);  
       }
       else
       {
-        ui->print(Progmem::getString(Progmem::analyzeSectorInfo2), sectorsPerTrack, interleave);
+        ui->print(Progmem::getString(Progmem::analyzeSectorInfo2), sectorsPerTrack);
       }
+      
+      // interleave
+      if (interleaveKnown)
+      {
+        ui->print("%u:1", interleave);
+      }
+      else
+      {
+        ui->print(Progmem::getString(Progmem::analyzeSectorInfo3));
+      }
+      ui->print(Progmem::getString(Progmem::analyzeSectorInfo4));
 
       // append special characters to the line
       if (thisCylinderMismatch || thisHeadMismatch)
@@ -633,7 +645,7 @@ void CommandAnalyze()
           continue;
         }
 
-        ui->print(Progmem::getString(Progmem::analyzeSectorInfo3));
+        ui->print(Progmem::getString(Progmem::analyzeSectorInfo5));
         
         WORD idx2 = 0;
         while (idx2 < sectorsPerTrack)
@@ -1298,6 +1310,9 @@ void CommandScan()
           return;        
         }
         
+        BYTE interleave;
+        CalculateInterleave(sectorsTable, tableCount, sectorsPerTrack, interleave);  
+        
         for (BYTE sector = 0; sector < sectorsPerTrack; sector++)
         {
           const BYTE sdh2 = (BYTE)(sectorsTable[sector] >> 24);
@@ -1331,7 +1346,6 @@ void CommandScan()
               dataErrors++;
               
               // write ID as bad sector
-              const BYTE interleave = CalculateInterleave(sectorsTable, tableCount, sectorsPerTrack);
               wdc->setBadSector(logicalSector, sectorsPerTrack, interleave, trySectorSize, &logicalCylinder, &logicalHead);
             }
             
@@ -1567,12 +1581,13 @@ DWORD* CalculateSectorsPerTrack(BYTE sdh, // input
   return result;  
 }
 
-BYTE CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sectorsPerTrack)
+bool CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sectorsPerTrack, BYTE& result)
 {
   // sequential
   if (sectorsPerTrack < 3)
   {
-    return 1;
+    result = 1;
+    return true;
   }
   
   BYTE thisSector = 0;
@@ -1601,7 +1616,8 @@ BYTE CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sector
     if ((nextSector - thisSector) == 1)
     {
       // confirmed sequential
-      return 1;
+      result = 1;
+      return true;
     }
     
     // nope, try to compute from thisSector
@@ -1621,11 +1637,13 @@ BYTE CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sector
     // double-check if nextSector is advanced by the same factor
     if ((BYTE)(sectorsTable[idx+1+interleave] >> 16) == nextSector+1)
     {
-      return interleave;
+      result = interleave;
+      return true;
     }
   }
   
   // could not determine interleave, fall back to sequential
-  return 1;
+  result = 1;
+  return false;
 }
 

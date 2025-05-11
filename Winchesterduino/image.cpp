@@ -996,7 +996,7 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
       
       cbLastPos = 0;
       cbSectorIdx = 0;
-      cbInterleave = CalculateInterleave(cbSectorsTable, cbSpt, cbSpt);
+      CalculateInterleave(cbSectorsTable, cbSpt, cbSpt, cbInterleave);
       cbSecMapSpecified = true;     
            
       // since we need to format, and set gaps, make sure there are no variable size sectors,

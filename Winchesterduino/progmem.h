@@ -126,6 +126,8 @@ public:
     analyzeSectorInfo,
     analyzeSectorInfo2,
     analyzeSectorInfo3,
+    analyzeSectorInfo4,
+    analyzeSectorInfo5,
     analyzeCylHdNormal,
     analyzeConstSsize, 
     analyzeWarning,
@@ -292,7 +294,7 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "9th May 2025";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "11th May 2025";
   PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";
@@ -350,9 +352,11 @@ private:
 // analyze command
   PROGMEM_STR m_analyzePrintOrder[]  PROGMEM = "Show logical sector numbers (interleave tables)? Y/N: ";
   PROGMEM_STR m_analyzeNoSectors[]   PROGMEM = "No valid sectors read";
-  PROGMEM_STR m_analyzeSectorInfo[]  PROGMEM = "%u sectors, %u bytes each, %u:1 interleave";
-  PROGMEM_STR m_analyzeSectorInfo2[] PROGMEM = "%u sectors, VARIABLE SIZE!, %u:1 interleave";
-  PROGMEM_STR m_analyzeSectorInfo3[] PROGMEM = "\r\nOrder: ";
+  PROGMEM_STR m_analyzeSectorInfo[]  PROGMEM = "%u sectors, %u bytes each, ";
+  PROGMEM_STR m_analyzeSectorInfo2[] PROGMEM = "%u sectors, VARIABLE SIZE!, ";
+  PROGMEM_STR m_analyzeSectorInfo3[] PROGMEM = "unknown";
+  PROGMEM_STR m_analyzeSectorInfo4[] PROGMEM = " interleave";
+  PROGMEM_STR m_analyzeSectorInfo5[] PROGMEM = "\r\nOrder: ";
   PROGMEM_STR m_analyzeCylHdNormal[] PROGMEM = "ID field cylinder and head numbers match seek position.\r\n";
   PROGMEM_STR m_analyzeConstSsize[]  PROGMEM = "Sector sizes inside single tracks are consistent.\r\n";
   PROGMEM_STR m_analyzeWarning[]     PROGMEM = "Warning(s):\r\n";
@@ -488,7 +492,8 @@ private:
                                                   m_optionWriteImage, m_optionShowParams, m_optionDos, m_optionPark,
                                                   
                                                   m_analyzePrintOrder, m_analyzeNoSectors, m_analyzeSectorInfo, m_analyzeSectorInfo2,
-                                                  m_analyzeSectorInfo3, m_analyzeCylHdNormal, m_analyzeConstSsize, m_analyzeWarning,
+                                                  m_analyzeSectorInfo3, m_analyzeSectorInfo4, m_analyzeSectorInfo5, 
+                                                  m_analyzeCylHdNormal, m_analyzeConstSsize, m_analyzeWarning,
                                                   m_analyzeCylMismatch, m_analyzeHdMismatch, m_analyzeVarSsize,
                                                   
                                                   m_hexdumpLongMode, m_hexdumpDump, m_hexdumpChecksum, m_hexdumpPolynomial1, 
