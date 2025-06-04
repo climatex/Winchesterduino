@@ -179,7 +179,6 @@ public:
     imgXmodemErrHeader,
     imgXmodemErrParams,
     imgXmodemErrSecTyp,
-    imgXmodemErrSync,
     imgXmodemErrMFMRLL,
     imgXmodemErrCyls,
     imgXmodemErrHeads,
@@ -294,7 +293,7 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "11th May 2025";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "4th Jun 2025";
   PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";
@@ -408,7 +407,6 @@ private:
   PROGMEM_STR m_imgXmodemErrHeader[] PROGMEM = "Invalid WDI file header";
   PROGMEM_STR m_imgXmodemErrParams[] PROGMEM = "Invalid drive parameters table in WDI file";
   PROGMEM_STR m_imgXmodemErrSecTyp[] PROGMEM = "Invalid sector data type in WDI file";
-  PROGMEM_STR m_imgXmodemErrSync[]   PROGMEM = "Cannot find/sync to starting sector (0-63)";
   PROGMEM_STR m_imgXmodemErrMFMRLL[] PROGMEM = "MFM<>RLL mismatch between image and current settings";
   PROGMEM_STR m_imgXmodemErrCyls[]   PROGMEM = "More physical cylinders in image than configured";
   PROGMEM_STR m_imgXmodemErrHeads[]  PROGMEM = "More physical heads in image than configured";  
@@ -509,7 +507,7 @@ private:
                                                   m_imgXmodem1k, m_imgXmodemPrefix, m_imgXmodem1kPrefix, m_imgXmodemWaitSend, 
                                                   m_imgXmodemWaitRecv, m_imgXmodemXferEnd, m_imgXmodemXferFail,                                                  
                                                   m_imgXmodemErrPacket, m_imgXmodemErrHeader, m_imgXmodemErrParams, m_imgXmodemErrSecTyp,
-                                                  m_imgXmodemErrSync, m_imgXmodemErrMFMRLL, m_imgXmodemErrCyls, m_imgXmodemErrHeads,                                                  
+                                                  m_imgXmodemErrMFMRLL, m_imgXmodemErrCyls, m_imgXmodemErrHeads,                                                  
                                                   m_imgXmodemErrVar1, m_imgXmodemErrVar2, m_imgWriteHeader, m_imgWriteComment, 
                                                   m_imgWriteDone, m_imgWriteEnterEsc, m_imgBadBlocks, m_imgBadBlocksKnown, m_imgDataCorrected,
                                                   m_imgDataErrors, m_imgDataErrorsConv, m_imgBadTracks, m_imgOverrideWrite1, 

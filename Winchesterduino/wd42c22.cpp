@@ -19,6 +19,12 @@
 // PORTH3       (D06): /READY%; input
 // PORTH4       (D07): /TRK0%;  input
 
+// initial DWORD values for timeout decrementers:
+#define TIMEOUT_FILLSECT  100000UL  // max. duration of one IDscan inside fillSectorsTable(), ~60ms
+#define TIMEOUT_READY     200000UL  // disk is ready if /READY is consistently low for ~120ms during powerup test
+#define TIMEOUT_SETTLE    800000UL  // seek must be complete within half a second of last pulse sent
+#define TIMEOUT_IO       5000000UL  // any other WDC I/O timeout, up to 3 seconds
+
 // interrupts - WDC "microcontroller interrupt" and drive "seek complete"
 volatile bool mcintFired = false;
 void MCINT()
@@ -46,9 +52,12 @@ void SC()
 
 // singleton, initial port settings during setup()
 WD42C22::WD42C22()
-{  
-  cli();
- 
+{ 
+  // initialize seed for pseudorandom filler during RAM test
+  pinMode(A0, INPUT);
+  randomSeed(analogRead(A0));
+  
+  cli(); 
   m_seekForward = false;
   m_physicalCylinder = 0;
   m_physicalHead = 0;
@@ -288,7 +297,7 @@ bool WD42C22::isDriveReady()
    
   // needs to be consistently low for quite a while (about 120ms)
   // as it can fire momentarily during disk powerup 
-  DWORD wait = 200000UL;
+  DWORD wait = TIMEOUT_READY;
   while (--wait)
   {
     if ((PINH & 8) != 0)
@@ -416,7 +425,7 @@ bool WD42C22::seekDrive(WORD toCylinder, BYTE toHead)
     }
     
     // wait until heads are settled after all seek pulses are done
-    DWORD wait = 800000UL;
+    DWORD wait = TIMEOUT_SETTLE;
     while (!seekComplete)
     {
       if (!--wait)
@@ -527,7 +536,7 @@ void WD42C22::setParameter()
   }
   
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, command);
   
@@ -569,7 +578,7 @@ void WD42C22::loadParameterBlock(BYTE dataFillGaps, BYTE dataFillPads, bool useN
   }
     
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, command);
   
@@ -650,7 +659,7 @@ void WD42C22::scanID(WORD& cylinderNo, BYTE& sectorNo, BYTE& sdh)
   const BYTE cancelSdh = (m_params.Heads > 8) ? 0x6F : 0x67;
   
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, 0x40); // WD "scan ID" of whatever's flying thru the drive head at current cylinder
   
@@ -698,7 +707,7 @@ DWORD* WD42C22::fillSectorsTable(WORD& tableCount)
   WORD tableIndex = 0;  
   while (tableIndex < tableCount)
   {
-    DWORD wait = 5000000UL;
+    DWORD wait = TIMEOUT_FILLSECT;
     mcintFired = false;
     adWrite(0x27, 0x40);
     
@@ -783,7 +792,7 @@ void WD42C22::readSector(BYTE sectorNo, WORD sectorSizeBytes, bool longMode, WOR
   }
 
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, command);
   
@@ -864,7 +873,7 @@ void WD42C22::verifyTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, WORD* over
   adWrite(0x26, sdh);
   
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, 0x24); // read multisector
   
@@ -902,7 +911,7 @@ void WD42C22::computeCorrection()
   adWrite(0x3B, icr);      // MAC = 0
   
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, 8);        // compute correction
   
@@ -1138,7 +1147,7 @@ void WD42C22::formatTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, WORD* over
   adWrite(0x26, sdh);
   
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, 0x51);
   
@@ -1206,7 +1215,7 @@ void WD42C22::writeSector(BYTE sectorNo, WORD sectorSizeBytes, WORD* overrideCyl
   adWrite(0x26, sdh);
 
   m_result = WDC_OK;
-  DWORD wait = 5000000UL;
+  DWORD wait = TIMEOUT_IO;
   mcintFired = false;
   adWrite(0x27, 0x30); // write
   
@@ -1414,7 +1423,7 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
     adWrite(0x26, sdh);
     
     m_result = WDC_OK;
-    DWORD wait = 5000000UL;
+    DWORD wait = TIMEOUT_IO;
     mcintFired = false;
     adWrite(0x27, 0xB8); // write ID
     
@@ -1489,7 +1498,7 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
     adWrite(0x26, sdh);
     
     m_result = WDC_OK;
-    DWORD wait = 5000000UL;
+    DWORD wait = TIMEOUT_IO;
     mcintFired = false;
     adWrite(0x27, 0xD3); // format single sector, W=1
     

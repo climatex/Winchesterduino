@@ -263,7 +263,7 @@ class WdiParser:
             if (spt[0] == 0):
             #
                 if (self._verboseTrackListing):
-                    print("unreadableTracks (no sector IDs)")
+                    print("track unreadable (no sector IDs)\n")
                   
                 unreadableTracks += 1
                 continue

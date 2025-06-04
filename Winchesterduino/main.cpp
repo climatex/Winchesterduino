@@ -652,6 +652,12 @@ void CommandAnalyze()
         {
           while ((idx < tableCount) && (idx2 < sectorsPerTrack))
           {
+            if (sectorsTable[idx] == 0xFFFFFFFFUL) // undefined?
+            {
+              idx++;
+              continue;
+            }
+            
             ui->print("%u ", (BYTE)(sectorsTable[idx++] >> 16));
             idx2++;
           }
@@ -1315,6 +1321,11 @@ void CommandScan()
         
         for (BYTE sector = 0; sector < sectorsPerTrack; sector++)
         {
+          if (sectorsTable[sector] == 0xFFFFFFFFUL)
+          {
+            continue;
+          }
+          
           const BYTE sdh2 = (BYTE)(sectorsTable[sector] >> 24);
           trySectorSize = wdc->getSectorSizeFromSDH(sdh2);        
           
@@ -1634,8 +1645,10 @@ bool CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sector
         break;
       }
     }
+    
     // double-check if nextSector is advanced by the same factor
-    if ((BYTE)(sectorsTable[idx+1+interleave] >> 16) == nextSector+1)
+    if (((BYTE)(sectorsTable[idx+1+interleave] >> 16) == nextSector+1) &&
+        (interleave <= sectorsPerTrack))
     {
       result = interleave;
       return true;

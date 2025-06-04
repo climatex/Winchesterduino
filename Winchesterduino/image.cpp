@@ -556,6 +556,48 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
         return false;
       }
       
+      if (cbSpt)
+      {
+        // as the interleave table almost always never starts from the beginning, find the starting sector
+        // but even the starting sector number might not start from 0
+        WORD startingSector = 0;
+        
+        while (cbStartingSectorIdx == (WORD)-1) // undefined
+        {
+          bool found = false;
+          
+          for (WORD idx = 0; idx < cbSectorsTableCount; idx++)
+          {                   
+            if (cbSectorsTable[idx] == 0xFFFFFFFFUL) // undefined?
+            {
+              continue;
+            }
+            
+            // logical sector number matching?
+            if ((BYTE)(cbSectorsTable[idx] >> 16) == startingSector)
+            {
+              cbStartingSectorIdx = idx;
+              cbSectorIdx = cbStartingSectorIdx;
+              cbLastPos = 0; // use this as count how many were written in the map
+              found = true;
+              break;
+            }
+          }
+          
+          if (found)
+          {
+            break;
+          }
+          
+          startingSector++;  // starts from 1, 2 or whatever
+          if (startingSector > cbSectorsTableCount) // cannot sync
+          {
+            cbSpt = 0; // mark track as unreadable
+            break;
+          }
+        }
+      }
+ 
       cbSptSpecified = true;
       data[packetIdx++] = cbSpt;
       CHECK_STREAM_END;
@@ -602,46 +644,26 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
     // sector numbering map
     if (!cbSecMapSpecified)
     {
-      // as the interleave table almost always never starts from the beginning, find the starting sector
-      // but even the starting sector number might not start from 0
-      WORD startingSector = 0;
-      
-      while (cbStartingSectorIdx == (WORD)-1) // undefined
-      {
-        for (WORD idx = 0; idx < cbSectorsTableCount; idx++)
-        {                   
-          if (cbSectorsTable[idx] == 0xFFFFFFFFUL) // undefined?
-          {
-            continue;
-          }
-          
-          // logical sector number matching?
-          if ((BYTE)(cbSectorsTable[idx] >> 16) == startingSector)
-          {
-            cbStartingSectorIdx = idx;
-            cbSectorIdx = cbStartingSectorIdx;
-            cbLastPos = 0; // use this as count how many were written in the map
-            break;
-          }
-        }
-        
-        startingSector++;  // starts from 1, 2 or whatever
-        if (startingSector > cbSectorsTableCount) // cannot sync
-        {
-          cbSuccess = false;
-          cbProgmemResponseStr = Progmem::imgXmodemErrSync;
-          return false;
-        }
-      }
+      static BYTE sectorMapPos = 0;      
       
       // now write the sector numbering map
-      const BYTE* sectorMap = (const BYTE*)&cbSectorsTable[cbStartingSectorIdx]; // access by bytes
       while ((cbLastPos < (WORD)cbSpt*4) && (cbSectorIdx < cbSectorsTableCount))
       {
-        data[packetIdx++] = sectorMap[cbLastPos++];
+        if (cbSectorsTable[cbSectorIdx] == 0xFFFFFFFFUL) // undefined?
+        {
+          cbSectorIdx++;
+          sectorMapPos = 0;
+          continue;
+        }
+        
+        const BYTE* sectorMap = (const BYTE*)(&cbSectorsTable[cbSectorIdx]); // access by bytes
+        data[packetIdx++] = sectorMap[sectorMapPos++];
+        
+        cbLastPos++;
         if ((cbLastPos % 4) == 0)
         {
           cbSectorIdx++; // 4 bytes per each sector
+          sectorMapPos = 0;
         }
         CHECK_STREAM_END;       
       }
@@ -650,11 +672,13 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
       if ((cbSectorIdx == cbSectorsTableCount) && (cbLastPos < (WORD)cbSpt*4))
       {
         cbSectorIdx = 0;
+        sectorMapPos = 0;
         continue;
       }
       
       cbSectorIdx = cbStartingSectorIdx;
       cbLastPos = 0;
+      sectorMapPos = 0;
       cbSecMapSpecified = true;
     }
     
@@ -666,6 +690,12 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
       if (!cbSecDataTypeSpecified) // determine data record type
       {
         rwBufferPos = 0;
+        
+        if (cbSectorsTable[cbSectorIdx] == 0xFFFFFFFFUL) // skip undefined
+        {
+          cbSectorIdx++;
+          continue;
+        }
         
         const BYTE sdh = (BYTE)(cbSectorsTable[cbSectorIdx] >> 24);        
         cbSecSizeBytes = wdc->getSectorSizeFromSDH(sdh);        
