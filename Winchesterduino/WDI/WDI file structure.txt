@@ -38,7 +38,7 @@ Structure of a 1 track data field:
                    Size 4 bytes * number of sectors of this track.
            Sector data records.
                    Count: number of sectors of this track.
-                   Size of each: 1 byte, or 2 bytes, or (number of sectors+1) bytes, as below.
+                   Size of each: 1 byte, or 2 bytes, or (sector size+1) bytes, as below.
 
 Structure of a sector numbering map, per 1 sector:
            byte 0: LSB of the logical cylinder number.           

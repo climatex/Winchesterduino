@@ -131,7 +131,7 @@ void WD42C22::resetController()
   
   // write to Auxiliary Buffer Control Register and set everything default (PIO mode etc)
   // except: clear bit 0 SCKS - switch drive controller from BCLK to WCLK from data separator
-  // "The microcontroller must switch the clock source tothe WCLK input prior to issuing any commands to the drive controller."
+  // "The microcontroller must switch the clock source to the WCLK input prior to issuing any commands to the drive controller."
   adWrite(0x2F, 0);
   
   // write to Digital Input Register, set DDRQ=1 (disable BDRQ interrupts)
