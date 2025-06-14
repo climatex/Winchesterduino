@@ -11,6 +11,10 @@ def main():
     if (len(sys.argv) != 3):
         print("Converts a raw disk image into the Winchesterduino WDI format.\n\nbin2wdi.py input.img output.wdi");
         return
+        
+    if (sys.argv[1] == sys.argv[2]):
+        print("Input and output must not be the same")
+        return
     
     wdi = WdiWriter()
     
