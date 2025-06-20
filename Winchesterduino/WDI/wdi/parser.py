@@ -8,6 +8,7 @@ class WdiParser:
                        verboseErrors = None, 
                        verboseTrackListing = None,
                        binaryOutputFileName = None,
+                       binaryOutputReinterleave = False,
                        badBlockFillByte = 0):
                 
         # all files opened OK
@@ -16,6 +17,9 @@ class WdiParser:
         # binary output: what to fill sectors with no address marks or bad block flags
         # sectors with CRC/ECC errors are dumped as they are
         self._badBlockFillByte = badBlockFillByte
+        
+        # binary output: write logical sectors in original interleave, or reorder to 1:1 interleave
+        self._binaryOutputReinterleave = binaryOutputReinterleave
         
         if (verboseErrors is None):
             self._verboseErrors = False
@@ -338,6 +342,10 @@ class WdiParser:
                 print(logsectors)      
             #
             
+            # binary output data: [ (logicalSectorNo,data), (logicalSectorNo,data) ...]
+            #                           1st physical sector          2nd
+            outputData = []
+            
             # sector data record
             currSector = 0
             while (currSector < spt[0]):      
@@ -371,13 +379,7 @@ class WdiParser:
                     
                     # write bad block fill
                     if (self._binaryOutput is not None):
-                    #
-                        try:
-                            self._binaryOutput.write(bytes([self._badBlockFillByte]*sectorSizeBytes))
-                        except:
-                            print("Error writing binary disk image")
-                            return
-                    #
+                        outputData.append( (logsectors[currSector-1], bytes([self._badBlockFillByte]*sectorSizeBytes)) )
                     
                     continue
                 #
@@ -401,13 +403,7 @@ class WdiParser:
                     #
                         
                     if (self._binaryOutput is not None):
-                    #
-                        try:
-                            self._binaryOutput.write(bytes([compressedData[0]]*sectorSizeBytes))
-                        except:
-                            print("Error writing binary disk image")
-                            return
-                    #
+                        outputData.append( (logsectors[currSector-1], bytes([compressedData[0]]*sectorSizeBytes)) )
                 #
                 else:
                 #
@@ -421,18 +417,52 @@ class WdiParser:
                     #
                     
                     if (self._binaryOutput is not None):
-                    #
-                        try:
-                            self._binaryOutput.write(sectorData)
-                        except:
-                            print("Error writing binary disk image")
-                            return
-                    #
+                        outputData.append( (logsectors[currSector-1], sectorData) )
                 #
             #
             
             if (self._verboseTrackListing):
                 print("")
+            
+            # write binary output file
+            if (outputData):
+            #
+                # as-is
+                if (not self._binaryOutputReinterleave):
+                #
+                    for (logicalSectorNo, data) in outputData:
+                    #
+                        try:
+                            self._binaryOutput.write(data)
+                        except:
+                        #
+                            print("Error writing binary disk image")
+                            return {"result": False}
+                        # 
+                    #
+                #
+                
+                # reinterleave to 1:1
+                else:
+                #
+                    logsectors.sort()
+                    
+                    for logicalSectorNo in logsectors:
+                    #
+                        data = next((item[1] for item in outputData if item[0] == logicalSectorNo), None)
+                        if (data is not None):
+                        #
+                            try:
+                                self._binaryOutput.write(data)                              
+                            except:
+                            #
+                                print("Error writing binary disk image")
+                                return {"result": False}
+                            #                            
+                        #
+                    #
+                #
+            #
         #
     #
 

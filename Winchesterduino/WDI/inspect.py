@@ -1,10 +1,10 @@
 # Winchesterduino (c) 2025 J. Bogin, http://boginjr.com
 # WDI disk image inspector
 
-# Syntax: python inspect.py image.wdi [-t] [-e] [-b image.img]
+# Syntax: python inspect.py image.wdi [-t] [-e] [-b image.img] [-1]
 #         -t: print detailed sector ID information for each track,
 #         -e: print detailed parse error information, if any,
-#         -b: also save a raw binary disk image.
+#         -b: also save a raw binary disk image (-1: reinterleave to 1:1).
 
 import sys
 
@@ -19,10 +19,13 @@ def main():
     verboseErrors = None
     verboseTrackListing = None
     binaryOutputFileName = None
+    binaryOutputReinterleave = False
     idx = 2
     while (idx < argc):
-        if ((verboseErrors is None) and (sys.argv[idx].lower() == "-e")):
-            verboseErrors = True
+        if (sys.argv[idx] == "-1"):
+            binaryOutputReinterleave = True
+        elif ((verboseErrors is None) and (sys.argv[idx].lower() == "-e")):
+            verboseErrors = True        
         elif ((verboseTrackListing is None) and (sys.argv[idx].lower() == "-t")):
             verboseTrackListing = True
         elif (binaryOutputFileName is None) and (((sys.argv[idx].lower() == "-b") and (argc > idx+1))):
@@ -31,8 +34,12 @@ def main():
             showUsage()
             return
         idx += 1
-        
-    wdi = WdiParser(sys.argv[1], verboseErrors, verboseTrackListing, binaryOutputFileName)
+    
+    if (sys.argv[1] == binaryOutputFileName):
+        print("Really?")
+        return
+    
+    wdi = WdiParser(sys.argv[1], verboseErrors, verboseTrackListing, binaryOutputFileName, binaryOutputReinterleave)
     if (not wdi.isInitialized()):
         print("Cannot open supplied file(s).")
         return
@@ -60,15 +67,18 @@ def main():
         print("Specify the -t command line argument to display detailed sector layout of each track.")
     if (binaryOutputFileName is None):
         print("You can also use the -b argument to generate a binary (raw) disk image.")
+    else:
+        print("Creating raw disk image", "(original interleave)." if not binaryOutputReinterleave else "(reinterleave to 1:1).")        
     
     print("\nProcessing done")
     return
 
 def showUsage():
-    print("Inspects a Winchesterduino disk image.\n\ninspect.py image.wdi [-t] [-e] [-b image.img]\n");
+    print("Inspects a Winchesterduino disk image.\n\ninspect.py image.wdi [-t] [-e] [-b image.img] [-1]\n");
     print("  -t\t\tPrint detailed sector ID information per track.")
     print("  -e\t\tPrint detailed parse error information, if any.")
-    print("  -b image.img\tCreates a binary disk image.")
+    print("  -b image.img\tCreates a binary (raw) disk image.")
+    print("  -1\t\tReorder sectors in the binary image to 1:1 interleave.")
     return
       
 def showDriveParameters(params):
