@@ -38,7 +38,7 @@ DWORD cbLastPos                = 0;
 WORD cbCylinder                = 0;
 BYTE cbHead                    = 0;
 BYTE cbSpt                     = 0;
-BYTE cbInterleave              = 0;
+BYTE cbCurrentSector           = 0;
 BYTE cbParams[32]              = {0};
 DWORD* cbSectorsTable          = NULL;
 WORD cbSectorsTableCount       = 0;
@@ -391,7 +391,7 @@ void CbCleanup()
   cbCylinder                = 0;
   cbHead                    = 0;
   cbSpt                     = 0;
-  cbInterleave              = 0;
+  cbCurrentSector           = 0;
   cbSectorsTableCount       = 0;
   cbSectorIdx               = 0;
   cbStartingSectorIdx       = (WORD)-1;
@@ -656,6 +656,8 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
           continue;
         }
         
+        cbCurrentSector = (BYTE)(cbSectorsTable[cbSectorIdx] >> 16);
+        
         const BYTE* sectorMap = (const BYTE*)(&cbSectorsTable[cbSectorIdx]); // access by bytes
         data[packetIdx++] = sectorMap[sectorMapPos++];
         
@@ -668,17 +670,44 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
         CHECK_STREAM_END;       
       }
       
-      // we still need to go from the beginning of the table?
+      // sectors per track count not reached: do we still need to go from the beginning of the table?
       if ((cbSectorIdx == cbSectorsTableCount) && (cbLastPos < (WORD)cbSpt*4))
       {
-        cbSectorIdx = 0;
         sectorMapPos = 0;
-        continue;
+        bool found = false;
+            
+        while (cbCurrentSector && !found)
+        {
+          for (cbSectorIdx = 0; cbSectorIdx < cbSectorsTableCount; cbSectorIdx++)
+          {
+            if (((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector)
+            {
+              found = true;
+              break;
+            }
+          }
+          
+          if (!found)
+          {
+            cbCurrentSector++; // possible gap?
+          }
+        }            
+        
+        // found from the beginning, get the succeeding sector index
+        if (found)
+        {
+          cbSectorIdx += 1;
+          if (cbSectorIdx < cbSectorsTableCount)
+          {
+            continue; // valid
+          }
+        }
       }
       
       cbSectorIdx = cbStartingSectorIdx;
       cbLastPos = 0;
       sectorMapPos = 0;
+      cbCurrentSector = 0;
       cbSecMapSpecified = true;
     }
     
@@ -701,6 +730,7 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
         cbSecSizeBytes = wdc->getSectorSizeFromSDH(sdh);        
         
         const BYTE logicalSector = (BYTE)(cbSectorsTable[cbSectorIdx] >> 16);
+        cbCurrentSector = logicalSector;
         const WORD logicalCylinder = (WORD)cbSectorsTable[cbSectorIdx];
         const BYTE logicalHead = sdh & 0xF;        
         
@@ -803,8 +833,33 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
     }    
     if ((cbSectorIdx == cbSectorsTableCount) && (cbLastPos < cbSpt))
     {
-      cbSectorIdx = 0;
-      continue;
+      bool found = false;
+            
+      while (cbCurrentSector && !found)
+      {
+        for (cbSectorIdx = 0; cbSectorIdx < cbSectorsTableCount; cbSectorIdx++)
+        {
+          if (((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector)
+          {
+            found = true;
+            break;
+          }
+        }
+        
+        if (!found)
+        {
+          cbCurrentSector++;
+        }
+      }            
+      
+      if (found)
+      {
+        cbSectorIdx += 1;
+        if (cbSectorIdx < cbSectorsTableCount)
+        {
+          continue;
+        }
+      }
     }
        
     // end of track?
@@ -1026,7 +1081,6 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
       
       cbLastPos = 0;
       cbSectorIdx = 0;
-      CalculateInterleave(cbSectorsTable, cbSpt, cbSpt, cbInterleave);
       cbSecMapSpecified = true;     
            
       // since we need to format, and set gaps, make sure there are no variable size sectors,
@@ -1124,7 +1178,7 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
         // already formatted empty...
         if (cbWriteImgBadSectorMode == 1) // also flag as bad?
         {
-          wdc->setBadSector(logicalSector, cbSpt, cbInterleave, cbSecSizeBytes, &logicalCylinder, &logicalHead);
+          wdc->setBadSector(logicalSector, &logicalCylinder, &logicalHead);
         }
         
         // continue with the next
@@ -1224,7 +1278,7 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
         // or format as bad
         if (formatBad)
         {
-          wdc->setBadSector(logicalSector, cbSpt, cbInterleave, cbSecSizeBytes, &logicalCylinder, &logicalHead);
+          wdc->setBadSector(logicalSector, &logicalCylinder, &logicalHead);
         }
         
         // count errors

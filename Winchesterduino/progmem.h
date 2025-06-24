@@ -293,7 +293,7 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "4th Jun 2025";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "24th Jun 2025";
   PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";

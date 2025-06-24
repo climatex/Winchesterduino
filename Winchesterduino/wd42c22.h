@@ -85,7 +85,7 @@ public:
   bool prepareFormatInterleave(BYTE, BYTE, BYTE* badBlocksTable = NULL);
   void formatTrack(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   void writeSector(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
-  void setBadSector(BYTE, BYTE, BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
+  void setBadSector(BYTE, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   
 private:  
   WD42C22();

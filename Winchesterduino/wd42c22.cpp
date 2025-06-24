@@ -361,7 +361,15 @@ bool WD42C22::recalibrate()
     PORTC ^= 0x10;
     
     // wait for the head to settle each step (ST506 18ms typical)
-    DELAY_MS(20);
+    DWORD wait = TIMEOUT_SETTLE;
+    while (!seekComplete)
+    {
+      if (!--wait)
+      {
+        ui->fatalError(Progmem::uiFeSeek);
+        return false;
+      }    
+    }
   }
 
   m_physicalCylinder = 0;  
@@ -1096,9 +1104,9 @@ void WD42C22::formatTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, WORD* over
   // GAP3 = 2*M*S + K
   // where M is motor speed variation of disk, 0.03 for +- 3%;
   // S: sector length in bytes
-  // K: 18 if no interleave (1:1), 0 if any interleave (always leaving 18 for a safe margin)  
+  // K: extra padding if sector is going to be extended (originally 18, this was too high for certain formats)
   BYTE gapSize = sectorSizeBytes/16;
-  gapSize += 18;
+  gapSize += 8;
   
   BYTE bcr = adRead(0x37);
   BYTE icr = adRead(0x3B);
@@ -1231,8 +1239,8 @@ void WD42C22::writeSector(BYTE sectorNo, WORD sectorSizeBytes, WORD* overrideCyl
   processResult();
 }
 
-void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave, WORD sectorSizeBytes, WORD* overrideCyl, BYTE* overrideHead)
-{
+void WD42C22::setBadSector(BYTE sectorNo, WORD* overrideCyl, BYTE* overrideHead)
+{    
   // This makes use of the WD42C22 "Write ID command" to mark a bad sector without having to reformat the whole track:
   // as when we read or write an image, the first comes the sector numbering table, only then the actual data, where we verify their good/bad flag.
   
@@ -1250,7 +1258,7 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
   // The only problem with this usage of the WriteID command is that it won't mark the bad block flag reliably on the 1st sector of the track:
   // the gap between the last and first sector on track can be big, depending on the SPT count, and it can't be easily calculated.
   
-  // Workaround for 1st sectors (sectorNo == 1) on track: use the "format single sector" command, normally supported on hard sectored media only.
+  // Workaround for 1st sectors on track: use the "format single sector" command, normally supported on hard sectored media only.
   // Set it on the 1st sector, with the proper sector number and size, and set the W=1 flag (command byte 0xD3) - important!
   // After /INDEX (of the 1st soft-sector) and the re-creation of its ID field with the bad block flag on, WRITE GATE is turned off over gaps.
   // This is important as there's no SECTOR pulse occuring, normally required for this command, that would turn it off.
@@ -1260,11 +1268,6 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
   //                 use the hard sector FormatSingleSector with W=1 for the first sector, even though we're soft-sectored.
   // Anyone knows of a better solution, feel free to share...
   
-  if (!sectorsPerTrack || !sectorSizeBytes)
-  {
-    return;
-  }
-     
   WORD currentCyl = m_physicalCylinder;
   BYTE currentHead = m_physicalHead;
   if (overrideCyl)
@@ -1276,62 +1279,67 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
     currentHead = *overrideHead;
   }
   
+  WORD tableCount = 0;
+  const DWORD* sectorsTable = wdc->fillSectorsTable(tableCount);
+  if (!sectorsTable || !tableCount)
+  {
+    return;
+  }
+
+  // analyze the sector map  
+  BYTE lowestSectorOnTrack = (BYTE)-1;
+  bool precedingSectorFound = false;
+  BYTE precedingSectorNo = 0;
+  WORD sectorSizeBytes = 0;  
+  
+  for (WORD index = 1; index < tableCount; index++)
+  {
+    // entry unfilled or invalid
+    if (sectorsTable[index] == 0xFFFFFFFFUL)
+    {
+      continue;
+    }
+    
+    // find the lowest logical sector number...
+    const BYTE thisSector = (sectorsTable[index-1] >> 16);
+    if (thisSector < lowestSectorOnTrack)
+    {
+      lowestSectorOnTrack = thisSector;
+    }
+    
+    // ... and the logical sector number preceding sectorNo 
+    if (!precedingSectorFound)
+    {
+      const DWORD search = (sectorsTable[index] & 0xFF00FFFFUL) | ((DWORD)sectorNo << 16);
+      if (sectorsTable[index] == search)
+      {
+        if (sectorsTable[index-1] == 0xFFFFFFFFUL)
+        {
+          continue; // invalid preceding entry
+        }
+        
+        precedingSectorNo = (BYTE)(sectorsTable[index-1] >> 16);
+        sectorSizeBytes = getSectorSizeFromSDH((BYTE)(sectorsTable[index-1] >> 24));
+        precedingSectorFound = true;
+      }
+    }    
+  }
+  delete[] sectorsTable;
+  
+  const bool isFirstSectorOnTrack = (sectorNo == lowestSectorOnTrack);
+  if (!isFirstSectorOnTrack && !precedingSectorFound)
+  {
+    return; // nothing to do
+  }
+    
   // do WriteID with F=1
-  if (sectorNo != 1)
+  if (!isFirstSectorOnTrack)
   {
     // prepare 5 bytes sector ident
-    sramBeginBufferAccess(true, 2043);    
-
-    // determine the preceding sector from an interleave table; 1-based
-    BYTE* interleaveTable = new BYTE[sectorsPerTrack + 1];
-    if (!interleaveTable)
-    {
-      return;
-    }
-    memset(interleaveTable, 0, sectorsPerTrack+1);
-
-    // fallback to sequential on invalid values
-    if (!interleave || (interleave >= sectorsPerTrack))
-    {
-      interleave = 1;
-    }
-
-    BYTE pos = 1;
-    BYTE currentSector = 1;
-    while (currentSector <= sectorsPerTrack)
-    {
-      interleaveTable[pos] = currentSector++;
-      pos += interleave;
-      if (pos > sectorsPerTrack)
-      {
-        pos = pos % sectorsPerTrack;
-        while ((pos <= sectorsPerTrack) && (interleaveTable[pos]))
-        {
-          pos++;
-        }
-      }
-    }  
-    
-    // find the previous sector
-    BYTE precedingSector = (BYTE)-1; 
-    for (BYTE idx = 1; idx <= sectorsPerTrack; idx++)
-    {
-      if (interleaveTable[idx] == sectorNo)
-      {
-        precedingSector = interleaveTable[idx-1]; // the one before is not always minus one...
-        break;
-      }
-    }
-    delete[] interleaveTable;
-    
-    // cannot determine?
-    if (precedingSector == (BYTE)-1)
-    {
-      return;
-    }
+    sramBeginBufferAccess(true, 2043);
     
     // BYTE0: sector number to find (before the byte offset, so sector preceding)
-    sramWriteByteSequential(precedingSector);
+    sramWriteByteSequential(precedingSectorNo);
     
     // BYTE1: IDENT (bits 7-4: one, bit 3: ~cyl10, bit 2: 1, bit 1: ~cyl9, bit 0: cyl8)
     const BYTE msb = (BYTE)(currentCyl >> 8);
@@ -1382,7 +1390,7 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
     
     // +GAP, see formatTrack
     offset += sectorSizeBytes/16;
-    offset += 18;
+    offset += 8;
     
     // load offset to loadParameterBlock() -> use defaults from applyParams(), but set U=1 for writeID to work
     loadParameterBlock(m_params.UseRLL ? 0x33 : 0x4E, 0, true, offset);
@@ -1454,7 +1462,7 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
     // see formatTrack
     const BYTE idPloLength = 2;
     BYTE gapSize = sectorSizeBytes/16;
-    gapSize += 18;
+    gapSize += 8;
   
     // ditto, just for one sector
     sramBeginBufferAccess(true, 0);
@@ -1481,7 +1489,7 @@ void WD42C22::setBadSector(BYTE sectorNo, BYTE sectorsPerTrack, BYTE interleave,
        
     // prepare task file registers
     adWrite(0x21, idPloLength);             // PLO length
-    adWrite(0x22, sectorNo);                // first sector
+    adWrite(0x22, 1);                       // one sector
     adWrite(0x23, gapSize-3);               // WD: Gap length written on disk is 3 bytes longer than gap value specified in sector number register
     adWrite(0x24, (BYTE)currentCyl);        // LSB
     adWrite(0x25, (BYTE)(currentCyl >> 8)); // MSB

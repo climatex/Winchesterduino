@@ -650,6 +650,7 @@ void CommandAnalyze()
         WORD idx2 = 0;
         while (idx2 < sectorsPerTrack)
         {
+          BYTE currentSector = 0;        
           while ((idx < tableCount) && (idx2 < sectorsPerTrack))
           {
             if (sectorsTable[idx] == 0xFFFFFFFFUL) // undefined?
@@ -658,15 +659,46 @@ void CommandAnalyze()
               continue;
             }
             
-            ui->print("%u ", (BYTE)(sectorsTable[idx++] >> 16));
+            currentSector = (BYTE)(sectorsTable[idx++] >> 16);            
+            ui->print("%u ", currentSector);
             idx2++;
           }
           
-          // we still need to go from the beginning of the table?
+          // sectors per track count not reached: do we still need to go from the beginning of the table?
           if (idx == tableCount)
           {
-            idx = 0;
-          }    
+            bool found = false;
+            
+            while (currentSector && !found)
+            {
+              for (idx = 0; idx < tableCount; idx++)
+              {
+                if (((BYTE)(sectorsTable[idx] >> 16)) == currentSector)
+                {
+                  found = true;
+                  break;
+                }
+              }
+              
+              if (!found)
+              {
+                currentSector++; // possible gap?
+              }
+            }            
+            
+            // found from the beginning, get the succeeding sector index
+            if (found)
+            {
+              idx += 1;
+              if (idx < tableCount)
+              {
+                continue; // valid
+              }
+            }
+
+            // not found, or out-of-bounds
+            break;
+          }
         }
       }      
                 
@@ -769,16 +801,17 @@ void CommandHexdump()
   
   while(true)
   {
-    ui->print(Progmem::getString(Progmem::uiChooseSector), 0, 63);
-    const BYTE* prompt = ui->prompt(2, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+    ui->print(Progmem::getString(Progmem::uiChooseSector), 0, 255);
+    const BYTE* prompt = ui->prompt(3, Progmem::getString(Progmem::uiDecimalInputEsc), true);
     if (!prompt)
     {
       ui->print(Progmem::getString(Progmem::uiNewLine));
       return;
     }
-    sector = (BYTE)atoi(prompt);
-    if (sector <= 63)
+    WORD chooseSector = (WORD)atoi(prompt);
+    if (chooseSector <= 255)
     {  
+      sector = (BYTE)chooseSector;
       if (!sector && !strlen(ui->getPromptBuffer())) ui->print("0");
       ui->print(Progmem::getString(Progmem::uiNewLine));      
       break;
@@ -1315,10 +1348,7 @@ void CommandScan()
           delete[] sectorsTable;
           return;        
         }
-        
-        BYTE interleave;
-        CalculateInterleave(sectorsTable, tableCount, sectorsPerTrack, interleave);  
-        
+                
         for (BYTE sector = 0; sector < sectorsPerTrack; sector++)
         {
           if (sectorsTable[sector] == 0xFFFFFFFFUL)
@@ -1357,7 +1387,7 @@ void CommandScan()
               dataErrors++;
               
               // write ID as bad sector
-              wdc->setBadSector(logicalSector, sectorsPerTrack, interleave, trySectorSize, &logicalCylinder, &logicalHead);
+              wdc->setBadSector(logicalSector, &logicalCylinder, &logicalHead);
             }
             
             else
@@ -1494,6 +1524,8 @@ DWORD* CalculateSectorsPerTrack(BYTE sdh, // input
     BYTE observedSPT = 0;
     BYTE maximumSPT = 0;
     
+    bool compute = false;
+    bool sectorZeroObserved = false;
     BYTE computeSPT = 0;
     WORD idxSPTComputer = 0;
     
@@ -1514,6 +1546,7 @@ DWORD* CalculateSectorsPerTrack(BYTE sdh, // input
       
       const BYTE sectorScanned = (BYTE)(data >> 16);
       const BYTE sdhScanned = (BYTE)(data >> 24);
+      sectorZeroObserved |= !sectorScanned;
       
       if (!cylinderMismatch)      
       {
@@ -1533,12 +1566,13 @@ DWORD* CalculateSectorsPerTrack(BYTE sdh, // input
       {
         // count number of times until we see the same sector again: that's the observed SPT
         computeSPT = sectorScanned;
+        compute = true;
       }
       else if (computeSPT == sectorScanned)
       {
-        computeSPT = 0; // stop counting
+        compute = false; // stop counting        
       }
-      if (computeSPT)
+      if (compute)
       {
         observedSPT++;
       }
@@ -1549,6 +1583,12 @@ DWORD* CalculateSectorsPerTrack(BYTE sdh, // input
         maximumSPT = sectorScanned;
       }
       idxSPTComputer++;
+    }
+    
+    // account for logical sector number 0
+    if (sectorZeroObserved)
+    {
+      maximumSPT++;
     }
     
     // failsafe    
@@ -1614,11 +1654,13 @@ bool CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sector
       continue;
     }
 
-    // neither of these is the last sector
-    if ((thisSector != sectorsPerTrack) && (nextSector != sectorsPerTrack))
+    // neither of these is the last sector (or penultimate; account for sector 0)
+    if ((thisSector < sectorsPerTrack-1) && (nextSector < sectorsPerTrack-1))
     {
       break;
     }
+    
+    // choose a different combination
     idx++;
   }
   
