@@ -828,7 +828,7 @@ void WD42C22::readSector(BYTE sectorNo, WORD sectorSizeBytes, bool longMode, WOR
   }
 }
 
-void WD42C22::verifyTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, WORD* overrideCyl, BYTE* overrideHead)
+void WD42C22::verifyTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, BYTE startSector, WORD* overrideCyl, BYTE* overrideHead)
 {
   // as above, but reads up to sectorsPerTrack of constant sectorSizeBytes
   // the SRAM buffer is too small for whole track reads, and its contents are trashed
@@ -865,7 +865,7 @@ void WD42C22::verifyTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, WORD* over
   
   // prepare task file registers  
   adWrite(0x22, sectorsPerTrack);         // sector count
-  adWrite(0x23, 1);                       // starting at sector 1
+  adWrite(0x23, startSector);             // starting sector number (default 1)
   adWrite(0x24, (BYTE)currentCyl);        // LSB
   adWrite(0x25, (BYTE)(currentCyl >> 8)); // MSB
   
@@ -1018,7 +1018,7 @@ BYTE WD42C22::getSDHFromSectorSize(WORD sectorSizeBytes)
   return sdh;
 }
 
-bool WD42C22::prepareFormatInterleave(BYTE sectorsPerTrack, BYTE interleave, BYTE* badBlocksTable)
+bool WD42C22::prepareFormatInterleave(BYTE sectorsPerTrack, BYTE interleave, BYTE startSector, BYTE* badBlocksTable)
 {
   // writes a special interleave table for the WDC into its buffer
   // 2 bytes per each sector, structure:
@@ -1026,6 +1026,7 @@ bool WD42C22::prepareFormatInterleave(BYTE sectorsPerTrack, BYTE interleave, BYT
   // X is 0 for normal sectors or 0x80 for bad sector marks, Y is the logical sector number or 0xFF if a 0x80 bad mark was used
   
   // sectorsPerTrack: number of physical sectors per track
+  // startSector: normally 1
   // badBlocksTable: if not null, points to an array of bytes, sectorsPerTrack size
   // array index is physical sector index, not its interleaved value
   // e.g. badBlocksTable[0] nonzero, [1] zero: first sector on track is marked bad, second is good
@@ -1075,7 +1076,18 @@ bool WD42C22::prepareFormatInterleave(BYTE sectorsPerTrack, BYTE interleave, BYT
     }
     
     // set logical sector number from prepared interleave table
-    sramWriteByteSequential(interleaveTable ? interleaveTable[sector+1] : sector+1);
+    BYTE sectorNumber = interleaveTable ? interleaveTable[sector+1] : sector+1;
+    
+    // if startSector is not 1-based, adjust this value
+    if (startSector == 0)
+    {
+      sectorNumber--;
+    }
+    else if (startSector > 1)
+    {
+      sectorNumber += startSector-1;      
+    }
+    sramWriteByteSequential(sectorNumber);
   }  
   sramFinishBufferAccess();
   

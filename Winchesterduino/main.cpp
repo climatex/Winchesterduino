@@ -631,13 +631,13 @@ void CommandAnalyze()
           }
           
           startingSector++;  // starts from 1, 2 or whatever
-          if (startingSector > tableCount) // cannot sync
+          if (startingSector > 255) // cannot sync
           {
             break;
           }
         }
         
-        if (startingSector > tableCount)
+        if (startingSector > 255)
         {
           // don't write sector numbering
           delete[] sectorsTable;
@@ -1064,6 +1064,31 @@ void CommandFormat()
     
     ui->print(Progmem::getString(Progmem::uiDeleteLine));
   }
+  
+  // starting sector
+  WORD startSector = 0;
+  while(true)
+  {
+    ui->print(Progmem::getString(Progmem::formatStartSector), 256-sectorsPerTrack);
+    const BYTE* prompt = ui->prompt(3, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+    if (!prompt)
+    {
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return;
+    }
+    
+    if (strlen(prompt))
+    {
+      startSector = (WORD)atoi(prompt);
+      if (startSector <= 256-sectorsPerTrack)
+      {
+        ui->print(Progmem::getString(Progmem::uiNewLine));
+        break;
+      }
+    }    
+   
+    ui->print(Progmem::getString(Progmem::uiDeleteLine));
+  }
    
   // format with verify
   ui->print(Progmem::getString(Progmem::formatVerify));
@@ -1092,11 +1117,6 @@ void CommandFormat()
   }
   
   BYTE badBlocksCount = 0;
-  BYTE* badBlocksTable = new BYTE[sectorsPerTrack];
-  if (!badBlocksTable)
-  {
-    ui->fatalError(Progmem::uiFeMemory);
-  }
   
   // format
   ui->print(Progmem::getString(Progmem::uiNewLine));  
@@ -1108,7 +1128,7 @@ void CommandFormat()
     {   
       ui->print(Progmem::getString(Progmem::formatProgress), cylinder, head);
       
-      wdc->prepareFormatInterleave(sectorsPerTrack, interleave);
+      wdc->prepareFormatInterleave(sectorsPerTrack, interleave, startSector);
       wdc->seekDrive(cylinder, head);      
       wdc->formatTrack(sectorsPerTrack, sectorSizeBytes);
       
@@ -1118,7 +1138,6 @@ void CommandFormat()
         ui->print(Progmem::getString(Progmem::uiNewLine2x));
         ui->print(Progmem::getString(wdc->getLastErrorMessage()));
         ui->print(Progmem::getString(Progmem::uiNewLine));
-        delete[] badBlocksTable;
         return;
       }
       
@@ -1126,9 +1145,8 @@ void CommandFormat()
       if (withVerify)
       {
         badBlocksCount = 0;
-        memset(badBlocksTable, 0, sectorsPerTrack);
 
-        wdc->verifyTrack(sectorsPerTrack, sectorSizeBytes);
+        wdc->verifyTrack(sectorsPerTrack, sectorSizeBytes, startSector);
         if (wdc->getLastError())
         {
           // WDC timeout, drive not ready, writefault - abort the command
@@ -1137,12 +1155,22 @@ void CommandFormat()
             ui->print(Progmem::getString(Progmem::uiNewLine2x));
             ui->print(Progmem::getString(wdc->getLastErrorMessage()));
             ui->print(Progmem::getString(Progmem::uiNewLine));
-            delete[] badBlocksTable;
             return;        
           }
           
+          // adjust which range sectors to check, depending on the starting sector
+          WORD endSector = sectorsPerTrack;
+          if (startSector == 0)
+          {
+            endSector--;
+          }
+          else if (startSector > 1)
+          {
+            endSector += startSector-1;
+          }
+          
           // fall back to single sector reads to determine which failed
-          for (BYTE sector = 1; sector <= sectorsPerTrack; sector++)
+          for (WORD sector = startSector; sector <= endSector; sector++)
           {
             wdc->readSector(sector, sectorSizeBytes); 
             
@@ -1153,34 +1181,20 @@ void CommandFormat()
                 ui->print(Progmem::getString(Progmem::uiNewLine2x));
                 ui->print(Progmem::getString(wdc->getLastErrorMessage()));
                 ui->print(Progmem::getString(Progmem::uiNewLine));
-                delete[] badBlocksTable;
                 return;        
               }
               
               // mark sector as bad
-              badBlocksTable[sector-1] = 1;
+              if (formatBadBlocks)
+              {
+                wdc->setBadSector(sector);
+              }
               badBlocksCount++;
               
               // prepend CHS information
               ui->print(Progmem::getString(Progmem::uiCHSInfo), cylinder, head, sector);
               ui->print(Progmem::getString(wdc->getLastErrorMessage()));
             }
-          }
-        }        
-
-        // write bad blocks to disk?
-        if (badBlocksCount && formatBadBlocks)
-        {
-          wdc->prepareFormatInterleave(sectorsPerTrack, interleave, badBlocksTable);
-          wdc->formatTrack(sectorsPerTrack, sectorSizeBytes);
-          
-          if (wdc->getLastError())
-          {
-            ui->print(Progmem::getString(Progmem::uiNewLine2x));
-            ui->print(Progmem::getString(wdc->getLastErrorMessage()));
-            ui->print(Progmem::getString(Progmem::uiNewLine));
-            delete[] badBlocksTable;
-            return;
           }
         }
         
@@ -1194,7 +1208,6 @@ void CommandFormat()
     }    
   }
    
-  delete[] badBlocksTable;
   ui->print(Progmem::getString(Progmem::formatComplete));  
 }
 

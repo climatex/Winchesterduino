@@ -80,9 +80,9 @@ public:
   
   void scanID(WORD&, BYTE&, BYTE&);
   void readSector(BYTE, WORD, bool longMode = false, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
-  void verifyTrack(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
+  void verifyTrack(BYTE, WORD, BYTE startSector = 1, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   DWORD* fillSectorsTable(WORD&);
-  bool prepareFormatInterleave(BYTE, BYTE, BYTE* badBlocksTable = NULL);
+  bool prepareFormatInterleave(BYTE, BYTE, BYTE startSector = 1, BYTE* badBlocksTable = NULL);
   void formatTrack(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   void writeSector(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   void setBadSector(BYTE, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);

@@ -590,7 +590,7 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
           }
           
           startingSector++;  // starts from 1, 2 or whatever
-          if (startingSector > cbSectorsTableCount) // cannot sync
+          if (startingSector > 255) // cannot sync
           {
             cbSpt = 0; // mark track as unreadable
             break;
@@ -680,7 +680,8 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
         {
           for (cbSectorIdx = 0; cbSectorIdx < cbSectorsTableCount; cbSectorIdx++)
           {
-            if (((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector)
+            if ((((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector) &&
+                 (cbSectorsTable[cbSectorIdx] != 0xFFFFFFFFUL))
             {
               found = true;
               break;
@@ -702,6 +703,10 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
             continue; // valid
           }
         }
+
+        // not found or out-of-bounds
+        cbSectorIdx = 0;
+        continue;
       }
       
       cbSectorIdx = cbStartingSectorIdx;
@@ -839,7 +844,8 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
       {
         for (cbSectorIdx = 0; cbSectorIdx < cbSectorsTableCount; cbSectorIdx++)
         {
-          if (((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector)
+          if ((((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector) &&
+               (cbSectorsTable[cbSectorIdx] != 0xFFFFFFFFUL))
           {
             found = true;
             break;
@@ -860,6 +866,9 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
           continue;
         }
       }
+      
+      cbSectorIdx = 0;
+      continue;
     }
        
     // end of track?
@@ -874,6 +883,7 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
     cbSecDataTypeSpecified = false;
     cbLastPos = 0;
     cbSectorIdx = 0;
+    cbCurrentSector = 0;
     cbStartingSectorIdx = (WORD)-1;   
     
     // and seek to next

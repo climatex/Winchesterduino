@@ -149,6 +149,7 @@ public:
     formatWarning,
     formatSpt,
     formatInterleave,
+    formatStartSector,
     formatVerify, 
     formatBadBlocks,
     formatProgress,
@@ -293,7 +294,7 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "24th Jun 2025";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "26th Jun 2025";
   PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";
@@ -377,6 +378,7 @@ private:
   PROGMEM_STR m_formatWarning[]      PROGMEM = "\r\nDestroys data between specified cylinders.";
   PROGMEM_STR m_formatSpt[]          PROGMEM = "Sectors per track (%u-%u): ";
   PROGMEM_STR m_formatInterleave[]   PROGMEM = "Interleave (1: none): ";
+  PROGMEM_STR m_formatStartSector[]  PROGMEM = "Starting sector (0-%u, default 1): ";
   PROGMEM_STR m_formatVerify[]       PROGMEM = "Verify during format? Y/N: ";
   PROGMEM_STR m_formatBadBlocks[]    PROGMEM = "Mark *any* errors as bad blocks? Y/N: ";
   PROGMEM_STR m_formatProgress[]     PROGMEM = "\rFormatting cyl %u head %u... ";
@@ -453,8 +455,8 @@ private:
   PROGMEM_STR m_dosBytesFree[]       PROGMEM = "bytes free on disk.\r\n";  
   PROGMEM_STR m_dosTypeInto[]        PROGMEM = "Type two empty newlines to quit\r\n";
   PROGMEM_STR m_dosMounted[]         PROGMEM = "%u MB partition mounted.\r\n\r\n";
-  PROGMEM_STR m_dosCommands[]        PROGMEM = "Supported commands:\r\n";
-  PROGMEM_STR m_dosCommandsList[]    PROGMEM = "CD, DIR, MKDIR, RMDIR, DEL, TYPE, TYPEINTO, EXIT.\r\n\r\n";
+  PROGMEM_STR m_dosCommands[]        PROGMEM = "Supported commands:\r\nCD, DIR, MKDIR, RMDIR, DEL, ";
+  PROGMEM_STR m_dosCommandsList[]    PROGMEM = "HEXDUMP, TYPE, TYPEINTO, EXIT.\r\n\r\n";
   PROGMEM_STR m_dosForbiddenChars[]  PROGMEM = "*?\\/\":<>|";
    
 // tables
@@ -497,8 +499,8 @@ private:
                                                   m_hexdumpLongMode, m_hexdumpDump, m_hexdumpChecksum, m_hexdumpPolynomial1, 
                                                   m_hexdumpPolynomial2, m_hexdumpPolynomial3, m_hexdumpChecksum2, m_hexdumpOk,
                                                   
-                                                  m_formatWarning, m_formatSpt, m_formatInterleave, m_formatVerify, m_formatBadBlocks,
-                                                  m_formatProgress, m_formatComplete,
+                                                  m_formatWarning, m_formatSpt, m_formatInterleave, m_formatStartSector,
+                                                  m_formatVerify, m_formatBadBlocks, m_formatProgress, m_formatComplete,
                                                   
                                                   m_scanWarning1, m_scanWarning2, m_scanWarning3, m_scanMarginal, m_scanProgress,
                                                   

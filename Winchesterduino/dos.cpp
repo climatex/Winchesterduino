@@ -182,6 +182,44 @@ void DOSDel(const BYTE* fileName)
   ui->print(Progmem::getString(Progmem::uiNewLine));
 }
 
+void DOSHexdump(const BYTE* fileName)
+{
+  memset(addPath, 0, sizeof(addPath));
+  strcat(addPath, path);
+  strcat(addPath, fileName);
+  
+  WORD count = 1;
+  FAT_EXECUTE(f_open(&file, addPath, FA_READ));
+  
+  BYTE* chunk = new BYTE[512];
+  if (!chunk)
+  {
+    ui->fatalError(Progmem::uiFeMemory);
+  }
+  
+  ui->print(Progmem::getString(Progmem::uiNewLine));
+  ui->print(Progmem::getString(Progmem::hexdumpDump));
+  
+  while (count)
+  {
+    if (DOSResult(f_read(&file, chunk, 512, &count)) != FR_OK)
+    {
+      delete[] chunk;
+      f_close(&file);
+      return;
+    }
+    
+    for (WORD idx = 0; idx < count; idx++)
+    {
+      ui->print("%02X ", chunk[idx]);
+    }
+  }
+  
+  delete[] chunk;  
+  FAT_EXECUTE(f_close(&file));
+  ui->print(Progmem::getString(Progmem::uiNewLine2x));
+}
+
 void DOSType(const BYTE* fileName)
 {  
   memset(addPath, 0, sizeof(addPath));
@@ -608,9 +646,10 @@ void CommandDos()
       continue;
     }
     
-    // DEL, TYPE
+    // DEL, TYPE, HEXDUMP
     else if ((strcmp_P(command, PSTR("DEL")) == 0) ||
-             (strcmp_P(command, PSTR("TYPE")) == 0))
+             (strcmp_P(command, PSTR("TYPE")) == 0) ||
+             (strcmp_P(command, PSTR("HEXDUMP")) == 0))
     {
       
       // 1 file name
@@ -630,10 +669,16 @@ void CommandDos()
         }
         
         // TYPE
-        else
+        else if (strcmp_P(command, PSTR("TYPE")) == 0)
         {                     
           DOSType(arguments);            
-        }          
+        }
+        
+        // HEXDUMP
+        else
+        {
+          DOSHexdump(arguments);
+        }
         
         continue;
       }
