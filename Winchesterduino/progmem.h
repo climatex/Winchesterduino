@@ -118,6 +118,7 @@ public:
     optionWriteImage,
     optionShowParams,
     optionDos,
+    optionSeektest,
     optionPark,
     
     // analyze command
@@ -161,6 +162,14 @@ public:
     scanWarning3,
     scanMarginal,
     scanProgress,
+    
+    // seektest command
+    seektestLegacy,
+    seektestRepeats,
+    seektestProgress,
+    seektestBackForth,
+    seektestButterfly,
+    seektestRandom,
     
     // park command
     parkSuccess, 
@@ -294,7 +303,7 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "26th Jun 2025";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "27th Jun 2025";
   PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";
@@ -347,7 +356,8 @@ private:
   PROGMEM_STR m_optionWriteImage[]   PROGMEM = "(W)rite disk from WDI image\r\n";
   PROGMEM_STR m_optionShowParams[]   PROGMEM = "(S)how current drive settings\r\n";
   PROGMEM_STR m_optionDos[]          PROGMEM = "(I)nspect DOS primary partition\r\n";
-  PROGMEM_STR m_optionPark[]         PROGMEM = "(P)ark drive heads\r\n"; 
+  PROGMEM_STR m_optionSeektest[]     PROGMEM = "(D)rive heads seek test / exercise\r\n";
+  PROGMEM_STR m_optionPark[]         PROGMEM = "(P)ark drive heads\r\n";  
   
 // analyze command
   PROGMEM_STR m_analyzePrintOrder[]  PROGMEM = "Show logical sector numbers (interleave tables)? Y/N: ";
@@ -390,6 +400,14 @@ private:
   PROGMEM_STR m_scanWarning3[]       PROGMEM = "Do NOT proceed if unsure about chosen drive settings.\r\n";
   PROGMEM_STR m_scanMarginal[]       PROGMEM = "Treat marginal (ECC correctable) sectors as bad? Y/N: ";
   PROGMEM_STR m_scanProgress[]       PROGMEM = "\rProcessing cylinder %u...";
+  
+// seektest command
+  PROGMEM_STR m_seektestLegacy[]     PROGMEM = "Use buffered drive seeking to offer butterfly seek tests.\r\n";
+  PROGMEM_STR m_seektestRepeats[]    PROGMEM = "\r\nEnter number of repetitions for each test, 0: skip:\r\n";
+  PROGMEM_STR m_seektestProgress[]   PROGMEM = "\r\nNow testing in between cylinders %u to %u:\r\n";
+  PROGMEM_STR m_seektestBackForth[]  PROGMEM = "Back and forth seeks";
+  PROGMEM_STR m_seektestButterfly[]  PROGMEM = "Full butterfly tests";
+  PROGMEM_STR m_seektestRandom[]     PROGMEM = "Random seeks";
   
 // park command
   PROGMEM_STR m_parkSuccess[]        PROGMEM = "\rDrive heads sent to landing zone cylinder %u.\r\n";
@@ -489,7 +507,7 @@ private:
                                                   m_uiMinimalModeSeek1, m_uiMinimalModeSeek2, m_uiMinimalModeSeek3,
                                                   
                                                   m_optionAnalyze, m_optionHexdump, m_optionFormat, m_optionScan, m_optionReadImage,
-                                                  m_optionWriteImage, m_optionShowParams, m_optionDos, m_optionPark,
+                                                  m_optionWriteImage, m_optionShowParams, m_optionDos, m_optionSeektest, m_optionPark,
                                                   
                                                   m_analyzePrintOrder, m_analyzeNoSectors, m_analyzeSectorInfo, m_analyzeSectorInfo2,
                                                   m_analyzeSectorInfo3, m_analyzeSectorInfo4, m_analyzeSectorInfo5, 
@@ -503,6 +521,9 @@ private:
                                                   m_formatVerify, m_formatBadBlocks, m_formatProgress, m_formatComplete,
                                                   
                                                   m_scanWarning1, m_scanWarning2, m_scanWarning3, m_scanMarginal, m_scanProgress,
+                                                  
+                                                  m_seektestLegacy, m_seektestRepeats, m_seektestProgress, m_seektestBackForth,
+                                                  m_seektestButterfly, m_seektestRandom,
                                                   
                                                   m_parkSuccess, m_parkPowerdownSafe, m_parkContinue, m_parkRecalibrating,
                                                   

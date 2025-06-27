@@ -15,6 +15,7 @@ void CommandHexdump();
 void CommandFormat();
 void CommandScan();
 void CommandShowParams();
+void CommandSeekTest();
 void CommandPark();
 // declared in image.h
 //void CommandReadImage();
@@ -69,8 +70,12 @@ void MainLoop()
   }
    
   // main menu
-  char allowedKeys[10] = {0};
+  char allowedKeys[11] = {0};
   strcat(allowedKeys, "AHFMRWSI");
+  if (wdc->getParams()->Cylinders >= 10)
+  {
+    strcat(allowedKeys, "D"); // offer seek test command
+  }
   if (wdc->getParams()->UseLandingZone)
   {
     strcat(allowedKeys, "P"); // offer park command
@@ -91,10 +96,15 @@ void MainLoop()
     ui->print(Progmem::getString(Progmem::optionWriteImage));
     ui->print(Progmem::getString(Progmem::optionShowParams));
     ui->print(Progmem::getString(Progmem::optionDos));
+    if (wdc->getParams()->Cylinders >= 10)
+    {
+      ui->print(Progmem::getString(Progmem::optionSeektest));
+    }
     if (wdc->getParams()->UseLandingZone)
     {
       ui->print(Progmem::getString(Progmem::optionPark));
     }
+    
     ui->print(Progmem::getString(Progmem::uiNewLine));
     ui->print(Progmem::getString(Progmem::uiChooseOption));
     
@@ -126,6 +136,9 @@ void MainLoop()
       break;
     case 'I':
       CommandDos();
+      break;
+    case 'D':
+      CommandSeekTest();
       break;
     case 'P':
       CommandPark();
@@ -1484,6 +1497,171 @@ void CommandShowParams()
   ui->print(Progmem::getString(wdc->getParams()->SlowSeek ? Progmem::uiShowSeekSlow : Progmem::uiShowSeekFast));
 }
 
+void CommandSeekTest()
+{
+  ui->print(Progmem::getString(Progmem::uiEscGoBack));
+  if (wdc->getParams()->SlowSeek)
+  {
+    ui->print(Progmem::getString(Progmem::seektestLegacy));
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+  }
+  
+  // start and end cylinder
+  WORD startCylinder = 0;  
+  BYTE* prompt = NULL;
+
+  while(true)
+  {
+    ui->print(Progmem::getString(Progmem::uiChooseStartCyl), 0, wdc->getParams()->Cylinders-5);
+    prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+    if (!prompt)
+    {
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return;
+    }
+    startCylinder = (WORD)atoi(prompt);
+    if (startCylinder <= wdc->getParams()->Cylinders-5)
+    {  
+      if (!startCylinder && !strlen(ui->getPromptBuffer())) ui->print("0");
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      break;
+    }
+    
+    ui->print(Progmem::getString(Progmem::uiDeleteLine));
+  }  
+
+  WORD endCylinder = wdc->getParams()->Cylinders-1;
+  if (startCylinder+5 < endCylinder)
+  {
+    while(true)
+    {
+      ui->print(Progmem::getString(Progmem::uiChooseEndCyl), startCylinder+5, wdc->getParams()->Cylinders-1);
+      prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+      if (!prompt)
+      {
+        ui->print(Progmem::getString(Progmem::uiNewLine));
+        return;
+      }
+      endCylinder = (WORD)atoi(prompt);
+      if ((endCylinder >= startCylinder+5) && (endCylinder < wdc->getParams()->Cylinders))
+      {  
+        ui->print(Progmem::getString(Progmem::uiNewLine));
+        break;
+      }
+      
+      ui->print(Progmem::getString(Progmem::uiDeleteLine));
+    }  
+  }
+  
+  // test repetitions for back and forth moves, butterfly tests and random seeks
+  const char input[] = ": ";
+  const char ellipsis[] = "...";
+  ui->print(Progmem::getString(Progmem::seektestRepeats));
+  
+  WORD backForthTests = 0;
+  ui->print(Progmem::getString(Progmem::seektestBackForth));
+  ui->print(input);
+  prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+  if (!prompt)
+  {
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    return;
+  }
+  backForthTests = (WORD)atoi(prompt);
+  if (!backForthTests && !strlen(ui->getPromptBuffer())) ui->print("0");
+  ui->print(Progmem::getString(Progmem::uiNewLine));
+  
+  // full butterfly tests offered on buffered seek only
+  WORD butterflyTests = 0;
+  if (!wdc->getParams()->SlowSeek)
+  {
+    ui->print(Progmem::getString(Progmem::seektestButterfly));
+    ui->print(input);
+    prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+    if (!prompt)
+    {
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return;
+    }
+    butterflyTests = (WORD)atoi(prompt);
+    if (!butterflyTests && !strlen(ui->getPromptBuffer())) ui->print("0");
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+  }
+  
+  WORD randomTests = 0;
+  ui->print(Progmem::getString(Progmem::seektestRandom));
+  ui->print(input);
+  prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+  if (!prompt)
+  {
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    return;
+  }
+  randomTests = (WORD)atoi(prompt);
+  if (!randomTests && !strlen(ui->getPromptBuffer())) ui->print("0");
+  ui->print(Progmem::getString(Progmem::uiNewLine));
+  
+  // nothing selected
+  if (!backForthTests && !butterflyTests && !randomTests)
+  {
+    return;
+  }
+  
+  WORD count;
+  ui->print(Progmem::getString(Progmem::seektestProgress), startCylinder, endCylinder);
+  
+  // back and forth tests (seekDrive on error halts execution)
+  if (backForthTests)
+  {
+    ui->print(Progmem::getString(Progmem::seektestBackForth));
+    ui->print(ellipsis);
+    
+    for (count = 0; count < backForthTests; count++)
+    {
+      wdc->seekDrive(endCylinder, 0);
+      wdc->seekDrive(startCylinder, 0);
+    }
+    
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+  }
+  
+  // butterfly tests
+  if (butterflyTests)
+  {
+    ui->print(Progmem::getString(Progmem::seektestButterfly));
+    ui->print(ellipsis);
+    
+    for (count = 0; count < butterflyTests; count++)
+    {
+      WORD start = startCylinder;
+      WORD end = endCylinder;
+      WORD count2 = end-start + 1;
+      
+      while (count2--)
+      {
+        wdc->seekDrive(start++, 0);
+        wdc->seekDrive(end--, 0);        
+      }
+    }
+    
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+  }
+  
+  // random
+  if (randomTests)
+  {
+    ui->print(Progmem::getString(Progmem::seektestRandom));
+    ui->print(ellipsis);
+    
+    for (count = 0; count < randomTests; count++)
+    {
+      wdc->seekDrive(random(startCylinder, endCylinder+1), 0);
+    }
+    
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+  }  
+}
+
 void CommandPark()
 {
   ui->print(Progmem::getString(Progmem::uiNewLine));
@@ -1654,32 +1832,42 @@ bool CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sector
     return true;
   }
   
-  BYTE thisSector = 0;
-  BYTE nextSector = 0;
+  BYTE startSector = (BYTE)-1;
   WORD idx = 0;
-  while (idx < tableCount-1)
+  WORD idx2 = 0;
+  
+  // find the lowest logical sector number and its index in the sectors table  
+  while (idx < tableCount)
   {
-    thisSector = (BYTE)(sectorsTable[idx] >> 16);
-    nextSector = (BYTE)(sectorsTable[idx+1] >> 16);
-    if (sectorsTable[idx] == 0xFFFFFFFFUL) // undefined
+    if (sectorsTable[idx] != 0xFFFFFFFFUL) // undefined
     {
-      idx += 2;
-      continue;
-    }
-
-    // neither of these is the last sector (or penultimate; account for sector 0)
-    if ((thisSector < sectorsPerTrack-1) && (nextSector < sectorsPerTrack-1))
-    {
-      break;
-    }
-    
-    // choose a different combination
+      if ((BYTE)(sectorsTable[idx] >> 16) < startSector)
+      {
+        startSector = (BYTE)(sectorsTable[idx] >> 16);
+        idx2 = idx;
+      }
+    }    
     idx++;
   }
   
-  if (idx < tableCount-1)
+  // next sector
+  idx = idx2 + 1;
+  BYTE nextSector = 0;
+  while (idx < tableCount)
   {
-    if ((nextSector - thisSector) == 1)
+    if (sectorsTable[idx] == 0xFFFFFFFFUL)
+    {
+      idx++;
+      continue;
+    }
+    
+    nextSector = (BYTE)(sectorsTable[idx] >> 16);
+    break;
+  }
+  
+  if (idx < tableCount)
+  {   
+    if ((nextSector > startSector) && ((nextSector - startSector) == 1))
     {
       // confirmed sequential
       result = 1;
@@ -1687,11 +1875,11 @@ bool CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sector
     }
     
     // nope, try to compute from thisSector
-    WORD idx2 = idx;
-    BYTE interleave = 0;
+    BYTE interleave = 1;
+    idx2 = idx;
     while (idx2 < tableCount)
     {
-      if ((BYTE)(sectorsTable[idx2++] >> 16) != thisSector+1)
+      if ((BYTE)(sectorsTable[idx2++] >> 16) != startSector+1)
       {
         interleave++;
       }
@@ -1701,12 +1889,18 @@ bool CalculateInterleave(const DWORD* sectorsTable, WORD tableCount, BYTE sector
       }
     }
     
-    // double-check if nextSector is advanced by the same factor
-    if (((BYTE)(sectorsTable[idx+1+interleave] >> 16) == nextSector+1) &&
-        (interleave <= sectorsPerTrack))
+    // double-check if nextSector is advanced by the same factor,
+    // or that it loops around the starting sector
+    idx2 = idx+interleave;
+    
+    if ((idx2 < tableCount) && (interleave < sectorsPerTrack))
     {
-      result = interleave;
-      return true;
+      const BYTE next = (BYTE)(sectorsTable[idx2] >> 16);
+      if ((next == nextSector+1) || (next == startSector))
+      {
+        result = interleave;
+        return true;
+      }
     }
   }
   
