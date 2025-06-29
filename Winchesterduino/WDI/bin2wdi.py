@@ -21,7 +21,6 @@ def main():
     print("\nCurrent limits of this binary conversion script:\n")
     print(" - all sector counts, sizes and interleave considered constant throughout the whole drive,")
     print(" - logical cylinder and head numbers in sector ID fields equal to their physical address,")
-    print(" - logical sectors are always numbered from one,")
     print(" - no indication of bad blocks, CRC/ECC errors or unreadable tracks.\n")
     
     if (wdi.askKey("Continue? (Y/N): ", "YN") == 'N'):
@@ -104,7 +103,10 @@ def main():
         params["sdh"] = 0x40
         params["ssize"] = 1024
     
-    params["interleave"] = wdi.askRange("Sector interleave (1: none): ", 1, params["spt"])
+    params["sourceInterleave"] = wdi.askRange("Binary source file interleave (1: none): ", 1, params["spt"])
+    params["targetInterleave"] = wdi.askRange("Target WDI file interleave (1: none): ", 1, params["spt"])
+    maxSec = 256-params["spt"]
+    params["startSector"] = wdi.askRange("Starting sector number of each track (0-" + str(maxSec) + ", default 1): ", 0, maxSec)
     
     print("")    
     expectedSize = params["cylinders"] * params["heads"] * params["spt"] * params["ssize"]

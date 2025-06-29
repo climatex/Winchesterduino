@@ -99,60 +99,87 @@ class WdiWriter:
     def writeData(self, params):
         cyl = 0
         head = 0
-        interleaveTable = self.getInterleaveTable(params)
+        sourceInterleave = self.getInterleaveTable(params, params["sourceInterleave"])
+        targetInterleave = self.getInterleaveTable(params, params["targetInterleave"])
         seekPos = 0
         inputSize = self.getInputFileSize()
         
         while (seekPos < inputSize):
         
-            # read one trackful
-            data = self._inputFile.read(params["ssize"] * params["spt"])
-            if ((not data) or (len(data) < params["ssize"] * params["spt"])):
+            # reinterleave source
+            sectors = []
+            tableIndex = 1
+            while (tableIndex <= params["spt"]):
+                sector = self._inputFile.read(params["ssize"])
+                if ((not sector) or (len(sector) < params["ssize"])):
+                    return cyl                
+                sectors.append( (sourceInterleave[tableIndex], sector) )
+                seekPos += params["ssize"]
+                tableIndex += 1
+                
+            # reinterleave to target
+            data = bytearray()
+            tableIndex = 1
+            while (tableIndex <= params["spt"]):
+                found = next((item[1] for item in sectors if item[0] == targetInterleave[tableIndex]), None)
+                if (found is not None):
+                    data.extend(found)
+                tableIndex += 1           
+                
+            try:           
+                # write track data field
+                self._outputFile.write(bytes([cyl & 0xFF]))
+                self._outputFile.write(bytes([cyl >> 8]))
+                self._outputFile.write(bytes([head]))
+                self._outputFile.write(bytes([params["spt"]]))
+                
+                # sector numbering map
+                sectorMap = bytearray([0]*4*params["spt"])
+                pos = 0
+                ofs = 0
+                while (pos < params["spt"]):
+                    logicalSectorNo = targetInterleave[pos+1]
+                    
+                    # needs to be adjusted?
+                    if (params["startSector"] < 1):
+                        logicalSectorNo -= 1
+                    elif (params["startSector"] > 1):
+                        logicalSectorNo += params["startSector"]-1
+
+                    sectorMap[ofs]   = cyl & 0xFF
+                    sectorMap[ofs+1] = cyl >> 8
+                    sectorMap[ofs+2] = logicalSectorNo
+                    sectorMap[ofs+3] = params["sdh"] | head
+                    pos += 1
+                    ofs += 4
+                self._outputFile.write(sectorMap)
+                
+                # data records
+                pos = 0
+                ofs = 0
+                while (pos < params["spt"]):
+                    compressedData = True
+                    prevData = data[ofs+0]
+                    idx = 1
+                    while (idx < params["ssize"]):
+                        if (data[ofs+idx] != prevData):
+                            compressedData = False
+                            break
+                        prevData = data[ofs+idx]
+                        idx += 1
+                        
+                    if (compressedData):
+                        self._outputFile.write(bytes([0x81]))
+                        self._outputFile.write(bytes([prevData]))
+                    else:
+                        self._outputFile.write(bytes([1]))
+                        self._outputFile.write(data[ofs:(ofs+params["ssize"])])
+                        
+                    ofs += params["ssize"]
+                    pos += 1
+            except:
+                print("File write error")
                 return cyl
-            seekPos += params["ssize"] * params["spt"]
-            
-            # write track data field
-            self._outputFile.write(bytes([cyl & 0xFF]))
-            self._outputFile.write(bytes([cyl >> 8]))
-            self._outputFile.write(bytes([head]))
-            self._outputFile.write(bytes([params["spt"]]))
-            
-            # sector numbering map
-            sectorMap = bytearray([0]*4*params["spt"])
-            pos = 0
-            ofs = 0
-            while (pos < params["spt"]):
-                sectorMap[ofs]   = cyl & 0xFF
-                sectorMap[ofs+1] = cyl >> 8
-                sectorMap[ofs+2] = interleaveTable[pos+1] # 1-based
-                sectorMap[ofs+3] = params["sdh"] | head
-                pos += 1
-                ofs += 4
-            self._outputFile.write(sectorMap)
-            
-            # data records
-            pos = 0
-            ofs = 0
-            while (pos < params["spt"]):
-                compressedData = True
-                prevData = data[ofs+0]
-                idx = 1
-                while (idx < params["ssize"]):
-                    if (data[ofs+idx] != prevData):
-                        compressedData = False
-                        break
-                    prevData = data[ofs+idx]
-                    idx += 1
-                    
-                if (compressedData):
-                    self._outputFile.write(bytes([0x81]))
-                    self._outputFile.write(bytes([prevData]))
-                else:
-                    self._outputFile.write(bytes([1]))
-                    self._outputFile.write(data[ofs:(ofs+params["ssize"])])
-                    
-                ofs += params["ssize"]
-                pos += 1
             
             # advance
             head += 1
@@ -164,14 +191,14 @@ class WdiWriter:
                 
         return cyl        
             
-    def getInterleaveTable(self, params):       
+    def getInterleaveTable(self, params, interleave):       
         table = bytearray([0]*(params["spt"]+1))
         pos = 1
         currSector = 1           
         while (currSector <= params["spt"]):
             table[pos] = currSector            
             currSector += 1
-            pos += params["interleave"]
+            pos += interleave
             if (pos > params["spt"]):
                 pos = pos % params["spt"]
                 while ((pos <= params["spt"]) and (table[pos]) > 0):

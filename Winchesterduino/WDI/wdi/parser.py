@@ -168,6 +168,24 @@ class WdiParser:
         else:
             return 256;
     
+    def getInterleave(self, sectorMap):
+        if (len(sectorMap) == 0):
+            return None
+        elif (len(sectorMap) < 3):
+            return "1:1"
+        try:
+            interleave = sectorMap.index(sectorMap[0]+1)
+            verify = interleave
+            for idx in range(len(sectorMap)):
+                if ((len(sectorMap)-(idx+1)) > interleave):
+                    verify = sectorMap[idx+1:].index(sectorMap[idx+1]+1)
+                    if (verify != interleave):
+                        break
+            return (str(interleave) + ":1") if (interleave == verify) else "unknown"                
+        except:
+            pass
+        return "unknown"
+    
     def parse(self):
     #
         params = self.getImageParams()
@@ -338,8 +356,13 @@ class WdiParser:
                     print(sdhs + "]")
                 else:
                     print("]")
-                print("Interleave: ", end="")
-                print(logsectors)      
+                print("Logical sectors: ", end="")
+                print(logsectors, end="")
+                if (logsectors):
+                    interleave = self.getInterleave(logsectors)
+                    if (interleave is not None):
+                        print(" (" + interleave + " interleave)", end="")
+                print("")                
             #
             
             # binary output data: [ (logicalSectorNo,data), (logicalSectorNo,data) ...]
