@@ -17,6 +17,7 @@ DIR dir                  = {0};
 BYTE path[MAX_PATH+1]    = {0};
 BYTE addPath[MAX_PATH+1] = {0};
 
+BYTE startingSector      = 0;   // 0: XT, 1: AT - but not always, this is computed
 BYTE sectorsPerTrack     = 0;   // uniform for all
 WORD sectorSizeBytes     = 0;   // ditto + shall be max. 512 bytes
 BYTE fsErrorMessage      = 0;   // Progmem index
@@ -35,7 +36,7 @@ void DOSConvertLogicalSectorToCHS(const DWORD& logical, WORD& cylinder, BYTE& he
 { 
   cylinder = (logical / sectorsPerTrack) / wdc->getParams()->Heads;
   head = (logical / sectorsPerTrack) % wdc->getParams()->Heads;
-  sector = (logical % sectorsPerTrack) + 1;
+  sector = (logical % sectorsPerTrack) + startingSector;
 }
 
 FRESULT DOSResult(FRESULT result)
@@ -136,9 +137,27 @@ bool DOSInitialize()
     ui->print(Progmem::getString(Progmem::uiNewLine));
     return false;
   }  
+  
+  // determine starting sector, find the lowest (some XT disks start from 0)
+  startingSector = (BYTE)-1;
+  for (WORD idx = 0; idx < dummy /* tableCount */; idx++)
+  {
+    const DWORD& sectorData = result[idx];
+    if (sectorData == 0xFFFFFFFFUL) // undefined
+    {
+      continue;
+    }
+    
+    const BYTE sector = (BYTE)(sectorData >> 16);
+    if (sector < startingSector)
+    {
+      startingSector = sector;
+    }
+  }
   delete[] result;
   
-  // try to mount first partition
+  // set root directory and try to mount first partition
+  memset(path, 0, sizeof(path));
   FAT_EXECUTE_0(f_mount(&fat, "0:", 1));
 
   return true;

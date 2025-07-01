@@ -11,8 +11,18 @@ Ui::Ui()
 {
   m_printDisabled = false;
   m_printLength = 0;
+
+  // using a conservative value of 115 200 bps here (about 8K/s during XMODEM transfers)
+  Serial.begin(115200);
   
-  Serial.begin(115200);  
+  // values above this baud rate need to be conformant to the table at https://wormfood.net/avrbaudcalc.php
+  // (fOSC = 16 MHz; U2xn = 1; while at error < 2 %)
+  //
+  // even though the CH340 on my Mega2560 board does not natively support a 500000bps rate,
+  // (https://www.insidegadgets.com/wp-content/uploads/2016/12/ch340g-datasheet.pdf),
+  // it is tested out to be working, and still "safe" enough for data transfers (~16K/s XMODEM-1K)
+  // - although this requires a terminal app (such as TeraTerm) not "tied" to classic baud rates.
+  // >=1 Mbps transfers would need a redesign of the XMODEM callback functions, or saving to an SD card, etc.
 }
 
 // reset board
