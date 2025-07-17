@@ -360,7 +360,14 @@ bool WD42C22::recalibrate()
     DELAY_US(SEEK_PULSE_US);
     PORTC ^= 0x10;
     
-    // wait for the head to settle each step (ST506 18ms typical)
+    // a fixed time to wait for the head to settle each step (ST506 18ms typical)
+    DELAY_MS(20);
+    
+    // the following check is not used (instead of fixed time, wait for seek complete status) during this particular command,
+    // as the disk can sometimes stop responding to STEP signals, and perform recalibration by itself:
+    // this can happen during "unparking" where the landing zone cylinder is set to a greater number than the actual cylinder count
+    
+    /*
     DWORD wait = TIMEOUT_SETTLE;
     while (!seekComplete)
     {
@@ -369,7 +376,7 @@ bool WD42C22::recalibrate()
         ui->fatalError(Progmem::uiFeSeek);
         return false;
       }    
-    }
+    }*/
   }
 
   m_physicalCylinder = 0;  

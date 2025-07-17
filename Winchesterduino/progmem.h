@@ -303,7 +303,7 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "1st Jul 2025";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "17th Jul 2025";
   PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";
@@ -321,14 +321,14 @@ private:
   PROGMEM_STR m_uiSetupCylPrecomp[]  PROGMEM = "Write precompensation start cylinder (0: always): ";
   PROGMEM_STR m_uiSetupAskLZ[]       PROGMEM = "Is landing zone specified (no auto parking)? Y/N: ";
   PROGMEM_STR m_uiSetupCylLZ[]       PROGMEM = "Landing zone (parking cylinder): ";
-  PROGMEM_STR m_uiSetupAskSeek[]     PROGMEM = "Drive seeking: (B)uffered / (S)T-506 compatible: ";
+  PROGMEM_STR m_uiSetupAskSeek[]     PROGMEM = "Drive seeking: (F)ast buffered / (S)low ST-506 compatible: ";
   PROGMEM_STR m_uiSetupAskSave[]     PROGMEM = "\r\nRemember these settings? Y/N: ";
   PROGMEM_STR m_uiSetupAskRemove[]   PROGMEM = "Remove saved settings? Y/N: ";
   PROGMEM_STR m_uiSetupSaved[]       PROGMEM = "Stored settings:\r\n";
   PROGMEM_STR m_uiSetupSavedLoad[]   PROGMEM = "\r\nLoading these settings.\r\n";
   PROGMEM_STR m_uiShowFromCyl[]      PROGMEM = ", from cylinder %u";
-  PROGMEM_STR m_uiShowSeekSlow[]     PROGMEM = "ST-506 compatible\r\n";
-  PROGMEM_STR m_uiShowSeekFast[]     PROGMEM = "buffered\r\n";
+  PROGMEM_STR m_uiShowSeekSlow[]     PROGMEM = "slow, ST-506 compatible\r\n";
+  PROGMEM_STR m_uiShowSeekFast[]     PROGMEM = "fast, buffered\r\n";
   PROGMEM_STR m_uiShowVerifyCRC[]    PROGMEM = "16-bit CRC";
   PROGMEM_STR m_uiShowVerifyECC[]    PROGMEM = "32-bit ECC";
   PROGMEM_STR m_uiShowVerifyECC56[]  PROGMEM = "56-bit ECC";

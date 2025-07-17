@@ -76,7 +76,7 @@ def main():
     else:
         params["lzStartCylinder"] = 0
         
-    params["seekType"] = 1 if wdi.askKey("Drive seeking: (B)uffered / (S)T-506 compatible: ", "BS") == 'S' else 0
+    params["seekType"] = 1 if wdi.askKey("Drive seeking: (F)ast buffered / (S)low ST-506 compatible: ", "FS") == 'S' else 0
     
     params["description"] = ""
     print("\nOptional text description of this image, empty line quits:")

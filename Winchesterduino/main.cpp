@@ -157,7 +157,7 @@ void SetupParameters()
   {
     ui->print(Progmem::getString(Progmem::uiSetupParams));
     ui->print(Progmem::getString(Progmem::uiSetupAskSeek));
-    key = toupper(ui->readKey("BS"));
+    key = toupper(ui->readKey("FS"));
     wdc->getParams()->SlowSeek = (key == 'S');
     ui->print(Progmem::getString(Progmem::uiEchoKey), key);
     
@@ -358,7 +358,7 @@ void SetupParameters()
  
   // seek slow or buffered 
   ui->print(Progmem::getString(Progmem::uiSetupAskSeek));
-  key = toupper(ui->readKey("BS"));
+  key = toupper(ui->readKey("FS"));
   wdc->getParams()->SlowSeek = (key == 'S');
   ui->print(Progmem::getString(Progmem::uiEchoKey), key);
   
@@ -1197,16 +1197,16 @@ void CommandFormat()
                 return;        
               }
               
+              // prepend CHS information
+              ui->print(Progmem::getString(Progmem::uiCHSInfo), cylinder, head, sector);
+              ui->print(Progmem::getString(wdc->getLastErrorMessage()));
+              
               // mark sector as bad
               if (formatBadBlocks)
               {
                 wdc->setBadSector(sector);
               }
               badBlocksCount++;
-              
-              // prepend CHS information
-              ui->print(Progmem::getString(Progmem::uiCHSInfo), cylinder, head, sector);
-              ui->print(Progmem::getString(wdc->getLastErrorMessage()));
             }
           }
         }

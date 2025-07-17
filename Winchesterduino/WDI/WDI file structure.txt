@@ -19,7 +19,7 @@ section 2) Source drive information. 32 bytes.
            byte 11: Heads landing zone specified (0: drive has auto-parking, 1: yes)
            byte 12: LSB of landing zone cylinder.
            byte 13: MSB of landing zone cylinder.
-           byte 14: ST-506 compatible seek. 0: use buffered seek.
+           byte 14: ST-506 compatible (slow) seek. 0: use buffered (fast) seek.
            bytes 15-31: Reserved, 0.                      
            
 section 3) Track data fields. One field after the other, for each track on drive.           

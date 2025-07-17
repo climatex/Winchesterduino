@@ -127,7 +127,7 @@ def showDriveParameters(params):
     print("Autopark on powerdown:\t" + temp)
     if (params["lzEnabled"] != 0):
         print("Landing zone cylinder:\t" + str(params["lzStartCylinder"]))
-    temp = "buffered" if params["seekType"] == 0 else "ST-506 compatible"
+    temp = "fast, buffered" if params["seekType"] == 0 else "slow, ST-506 compatible"
     print("Drive seeking mode:\t" + temp)
     print("")
         
