@@ -90,7 +90,8 @@ bool eepromLoadConfiguration()
   if ((check->Cylinders == 0) || (check->Cylinders > 2048) ||
       (check->Heads == 0) || (check->Heads > 16) || (check->DataVerifyMode > 2) ||
       (check->WritePrecompStartCyl > 2047) || (check->RWCStartCyl > 2047) ||
-      (check->LandingZone > 2047))
+      (check->LandingZone > 2047) || 
+      (check->PartialImageStartCyl > 2047) || (check->PartialImageEndCyl > 2047))
   {
     eepromClearConfiguration();
     memset(check, 0, sizeof(WD42C22::DiskDriveParams));

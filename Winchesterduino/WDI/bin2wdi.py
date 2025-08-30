@@ -78,6 +78,11 @@ def main():
         
     params["seekType"] = 1 if wdi.askKey("Drive seeking: (F)ast buffered / (S)low ST-506 compatible: ", "FS") == 'S' else 0
     
+    # this will be set in the end, based on how many cylinders were successfully written
+    params["partialImage"] = 0
+    params["partialImageStartCylinder"] = 0
+    params["partialImageEndCylinder"] = 0
+    
     params["description"] = ""
     print("\nOptional text description of this image, empty line quits:")
     description = input("").strip()
@@ -107,6 +112,8 @@ def main():
     params["targetInterleave"] = wdi.askRange("Target WDI file interleave (1: none): ", 1, params["spt"])
     maxSec = 256-params["spt"]
     params["startSector"] = wdi.askRange("Starting sector number of each track (0-" + str(maxSec) + ", default 1): ", 0, maxSec)
+    maxCyl = params["cylinders"]-1
+    params["startCylinder"] = wdi.askRange("Starting cylinder number in image (0-" + str(maxCyl) + ", default 0): ", 0, maxCyl)
     
     print("")    
     expectedSize = params["cylinders"] * params["heads"] * params["spt"] * params["ssize"]
@@ -131,6 +138,13 @@ def main():
     if (wdi.writeHeader(params)):
         cylsProcessed = wdi.writeData(params)
         print(str(cylsProcessed) + " cylinder(s) written.")
+        
+        # detect if not all cylinders were written to the WDI
+        if (not wdi.isWriteError()) and (cylsProcessed > 0) and ((params["startCylinder"] != 0) or (cylsProcessed != params["cylinders"])):
+            params["partialImage"] = 1
+            params["partialImageStartCylinder"] = params["startCylinder"]
+            params["partialImageEndCylinder"] = params["startCylinder"] + cylsProcessed-1
+            wdi.writeHeader(params) # rewrite header
     
 if __name__ == "__main__":
     try:

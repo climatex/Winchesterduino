@@ -68,7 +68,9 @@ def main():
     if (binaryOutputFileName is None):
         print("You can also use the -b argument to generate a binary (raw) disk image.")
     else:
-        print("Creating raw disk image", "(original interleave)." if not binaryOutputReinterleave else "(reinterleave to 1:1).")        
+        print("Creating raw disk image", "(original interleave)." if not binaryOutputReinterleave else "(reinterleave to 1:1).")
+    if (params["partialImage"] == 1):
+        print("Warning: this is a partial disk image. See above cylinder range for details.")
     
     print("\nProcessing done")
     return
@@ -89,6 +91,7 @@ def showDriveParameters(params):
         errors += "\nData verify mode must be 0 to 2"
     if ((params["cylinders"] < 1) or (params["cylinders"] > 2048)):
         errors += "\nNumber of cylinders must be 1 to 2048"
+        params["cylinders"] = 2048
     if ((params["heads"] < 1) or (params["heads"] > 16)):
         errors += "\nNumber of heads must be 1 to 16"
     if ((params["wpStartCylinder"] < 0) or (params["wpStartCylinder"] > 2047)):
@@ -97,6 +100,14 @@ def showDriveParameters(params):
         errors += "\nRWC start cylinder must be within 0 to 2047"
     if ((params["lzStartCylinder"] < 0) or (params["lzStartCylinder"] > 2047)):
         errors += "\nLanding zone start cylinder must be within 0 to 2047"
+    if ((params["partialImage"] < 0) or (params["partialImage"] > 1)):
+        errors += "\nPartial image flag must be 0 or 1"
+    if ((params["partialImageStartCylinder"] < 0) or (params["partialImageStartCylinder"] > params["cylinders"]-1)):
+        errors += "\nPartial image start cylinder must be within 0 to " + str(params["cylinders"]-1)
+    if ((params["partialImageEndCylinder"] < 0) or (params["partialImageEndCylinder"] > params["cylinders"])):
+        errors += "\nPartial image end cylinder must be within 0 to " + str(params["cylinders"]-1)
+    if (params["partialImageStartCylinder"] > params["partialImageEndCylinder"]):
+        errors += "\nPartial image start cylinder must not be greater than the end cylinder"
         
     if (len(errors) > 0):
         print("Invalid disk drive parameters detected in WDI file:")
@@ -117,7 +128,15 @@ def showDriveParameters(params):
         print("32-bit ECC")
     else:
         print("56-bit ECC")
-    print("Cylinders:\t\t" + str(params["cylinders"]))
+    print("Cylinders:\t\t" + str(params["cylinders"]), end="")
+    if (params["partialImage"] == 1):
+        print(" (this is a partial image of cylinder", end="")
+        if (params["partialImageStartCylinder"] == params["partialImageEndCylinder"]):
+            print(" " + str(params["partialImageStartCylinder"]) + " only)")
+        else:
+            print("s " + str(params["partialImageStartCylinder"]) + " to " + str(params["partialImageEndCylinder"]) + " only)")
+    else:
+        print("")
     print("Heads:\t\t\t" + str(params["heads"]))
     temp = "disabled" if params["rwcEnabled"] == 0 else "enabled, from cylinder " + str(params["rwcStartCylinder"])
     print("Reduced write current:\t" + temp)

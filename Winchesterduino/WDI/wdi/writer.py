@@ -6,6 +6,7 @@ import io
 class WdiWriter:
     def __init__(self):
         self._initialized = False
+        self._writeError = False
             
     def __del__(self):
         if (self._initialized):
@@ -27,6 +28,9 @@ class WdiWriter:
             
     def isInitialized(self):
         return self._initialized
+        
+    def isWriteError(self):
+        return self._writeError
                 
     def askKey(self, prompt, keys=""):
         while True:
@@ -62,7 +66,9 @@ class WdiWriter:
         return 0
                 
     def writeHeader(self, params):
-        try:
+        try:            
+            self._writeError = False
+            self._outputFile.seek(0)
             
             # signature and description
             self._outputFile.write(b"WDI file created by Winchesterduino, (c) J. Bogin\r\n")
@@ -89,15 +95,23 @@ class WdiWriter:
             self._outputFile.write(bytes([params["lzStartCylinder"] & 0xFF]))
             self._outputFile.write(bytes([params["lzStartCylinder"] >> 8]))
             self._outputFile.write(bytes([params["seekType"]]))
-            self._outputFile.write(bytes([0]*17))
+            self._outputFile.write(bytes([params["partialImage"]]))
+            self._outputFile.write(bytes([params["partialImageStartCylinder"] & 0xFF]))
+            self._outputFile.write(bytes([params["partialImageStartCylinder"] >> 8]))
+            self._outputFile.write(bytes([params["partialImageEndCylinder"] & 0xFF]))
+            self._outputFile.write(bytes([params["partialImageEndCylinder"] >> 8]))
+            self._outputFile.write(bytes([0]*12))
             return True
         
         except:
+            self._writeError = True
             print("File write error")            
             return False
             
     def writeData(self, params):
+        self._writeError = False
         cyl = 0
+        startingCyl = params["startCylinder"]
         head = 0
         sourceInterleave = self.getInterleaveTable(params, params["sourceInterleave"])
         targetInterleave = self.getInterleaveTable(params, params["targetInterleave"])
@@ -128,8 +142,8 @@ class WdiWriter:
                 
             try:           
                 # write track data field
-                self._outputFile.write(bytes([cyl & 0xFF]))
-                self._outputFile.write(bytes([cyl >> 8]))
+                self._outputFile.write(bytes([(cyl+startingCyl) & 0xFF]))
+                self._outputFile.write(bytes([(cyl+startingCyl) >> 8]))
                 self._outputFile.write(bytes([head]))
                 self._outputFile.write(bytes([params["spt"]]))
                 
@@ -146,8 +160,8 @@ class WdiWriter:
                     elif (params["startSector"] > 1):
                         logicalSectorNo += params["startSector"]-1
 
-                    sectorMap[ofs]   = cyl & 0xFF
-                    sectorMap[ofs+1] = cyl >> 8
+                    sectorMap[ofs]   = (cyl+startingCyl) & 0xFF
+                    sectorMap[ofs+1] = (cyl+startingCyl) >> 8
                     sectorMap[ofs+2] = logicalSectorNo
                     sectorMap[ofs+3] = params["sdh"] | head
                     pos += 1
@@ -178,6 +192,7 @@ class WdiWriter:
                     ofs += params["ssize"]
                     pos += 1
             except:
+                self._writeError = True
                 print("File write error")
                 return cyl
             
@@ -186,7 +201,7 @@ class WdiWriter:
             if (head == params["heads"]):
                 head = 0
                 cyl += 1
-            if (cyl == params["cylinders"]):
+            if (cyl+startingCyl >= params["cylinders"]):
                 return cyl
                 
         return cyl        

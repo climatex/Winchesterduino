@@ -34,7 +34,7 @@ public:
     return &wdc;
   }
   
-  // 15 bytes, needs to be POD
+  // 20 bytes, needs to be POD
   struct DiskDriveParams
   {
     bool UseRLL;
@@ -48,6 +48,9 @@ public:
     bool UseLandingZone;
     WORD LandingZone;
     bool SlowSeek;
+    bool PartialImage;
+    WORD PartialImageStartCyl;
+    WORD PartialImageEndCyl;
   };
   
   // functions for buffer SRAM access  

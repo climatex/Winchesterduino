@@ -49,15 +49,90 @@ WORD cbSecSizeBytes            = 0;
 
 void CommandReadImage()
 { 
+  ui->print(Progmem::getString(Progmem::uiEscGoBack));
+  
+  // ask to image part of the disk
+  BYTE key = 0;
+  wdc->getParams()->PartialImage = false;
+  wdc->getParams()->PartialImageStartCyl = 0;
+  wdc->getParams()->PartialImageEndCyl = 0;
+  
+  if (wdc->getParams()->Cylinders > 1)
+  {
+    ui->print(Progmem::getString(Progmem::imgReadWholeDisk));
+    key = toupper(ui->readKey("YN\e"));
+    if (key == '\e')
+    {
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return;
+    }
+    
+    const bool partialImage = (key == 'N');
+    ui->print(Progmem::getString(Progmem::uiEchoKey), key);
+    
+    if (partialImage)
+    {
+      // start and end cylinder
+      WORD startCylinder = 0;
+      while(true)
+      {
+        ui->print(Progmem::getString(Progmem::uiChooseStartCyl), 0, wdc->getParams()->Cylinders-1);
+        const BYTE* prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+        if (!prompt)
+        {
+          ui->print(Progmem::getString(Progmem::uiNewLine));
+          return;
+        }
+        startCylinder = (WORD)atoi(prompt);
+        if (startCylinder < wdc->getParams()->Cylinders)
+        {  
+          if (!startCylinder && !strlen(ui->getPromptBuffer())) ui->print("0");
+          ui->print(Progmem::getString(Progmem::uiNewLine));
+          break;
+        }
+        
+        ui->print(Progmem::getString(Progmem::uiDeleteLine));
+      } 
+      
+      WORD endCylinder = wdc->getParams()->Cylinders-1;
+      if (startCylinder != endCylinder)
+      {
+        while(true)
+        {
+          ui->print(Progmem::getString(Progmem::uiChooseEndCyl), startCylinder, wdc->getParams()->Cylinders-1);
+          const BYTE* prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+          if (!prompt)
+          {
+            ui->print(Progmem::getString(Progmem::uiNewLine));
+            return;
+          }
+          endCylinder = (WORD)atoi(prompt);
+          if ((endCylinder >= startCylinder) && (endCylinder < wdc->getParams()->Cylinders))
+          {  
+            if (!endCylinder && !strlen(ui->getPromptBuffer())) ui->print("0");
+            ui->print(Progmem::getString(Progmem::uiNewLine));
+            break;
+          }
+          
+          ui->print(Progmem::getString(Progmem::uiDeleteLine));
+        }  
+      }
+      
+      if ((startCylinder > 0) || (endCylinder != wdc->getParams()->Cylinders-1))
+      {
+        wdc->getParams()->PartialImage = true;
+        wdc->getParams()->PartialImageStartCyl = startCylinder;
+        wdc->getParams()->PartialImageEndCyl = endCylinder;
+      }
+    }
+  }
+  
   // ask to use 1K packets
   bool useXMODEM1K = false;
-  BYTE key = 0;
   BYTE* testAlloc = new BYTE[1030];
   if (testAlloc)
   {
     delete[] testAlloc;
-    
-    ui->print(Progmem::getString(Progmem::uiEscGoBack));
     ui->print(Progmem::getString(Progmem::imgXmodem1k));
     key = toupper(ui->readKey("YN\e"));
     if (key == '\e')
@@ -122,7 +197,14 @@ void CommandReadImage()
   memcpy(&cbParams, wdc->getParams(), sizeof(WD42C22::DiskDriveParams));
   
   // seek to the beginning
-  wdc->seekDrive(0, 0);
+  if (!wdc->getParams()->PartialImage)
+  {
+    wdc->seekDrive(0, 0);
+  }
+  else
+  {
+    wdc->seekDrive(wdc->getParams()->PartialImageStartCyl, 0);
+  }  
   
   ui->print("");
   ui->print(Progmem::getString(useXMODEM1K ? Progmem::imgXmodem1kPrefix : Progmem::imgXmodemPrefix));
@@ -192,7 +274,82 @@ void CommandWriteImage()
     return;
   }
   ui->print(Progmem::getString(Progmem::uiEchoKey), key);
-  cbWriteImgOverrideParams = (key == 'Y'); 
+  cbWriteImgOverrideParams = (key == 'Y');
+  
+  // if not, ask whether to work on the whole disk or partial image
+  wdc->getParams()->PartialImage = false;
+  wdc->getParams()->PartialImageStartCyl = 0;
+  wdc->getParams()->PartialImageEndCyl = 0;
+  
+  if (!cbWriteImgOverrideParams && (wdc->getParams()->Cylinders > 1))
+  {
+    ui->print(Progmem::getString(Progmem::imgWriteWholeDisk));
+    key = toupper(ui->readKey("YN\e"));
+    if (key == '\e')
+    {
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return;
+    }
+    
+    const bool partialImage = (key == 'N');
+    ui->print(Progmem::getString(Progmem::uiEchoKey), key);
+    
+    if (partialImage)
+    {
+      // start and end cylinder
+      WORD startCylinder = 0;
+      while(true)
+      {
+        ui->print(Progmem::getString(Progmem::uiChooseStartCyl), 0, wdc->getParams()->Cylinders-1);
+        const BYTE* prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+        if (!prompt)
+        {
+          ui->print(Progmem::getString(Progmem::uiNewLine));
+          return;
+        }
+        startCylinder = (WORD)atoi(prompt);
+        if (startCylinder < wdc->getParams()->Cylinders)
+        {  
+          if (!startCylinder && !strlen(ui->getPromptBuffer())) ui->print("0");
+          ui->print(Progmem::getString(Progmem::uiNewLine));
+          break;
+        }
+        
+        ui->print(Progmem::getString(Progmem::uiDeleteLine));
+      } 
+      
+      WORD endCylinder = wdc->getParams()->Cylinders-1;
+      if (startCylinder != endCylinder)
+      {
+        while(true)
+        {
+          ui->print(Progmem::getString(Progmem::uiChooseEndCyl), startCylinder, wdc->getParams()->Cylinders-1);
+          const BYTE* prompt = ui->prompt(4, Progmem::getString(Progmem::uiDecimalInputEsc), true);
+          if (!prompt)
+          {
+            ui->print(Progmem::getString(Progmem::uiNewLine));
+            return;
+          }
+          endCylinder = (WORD)atoi(prompt);
+          if ((endCylinder >= startCylinder) && (endCylinder < wdc->getParams()->Cylinders))
+          {  
+            if (!endCylinder && !strlen(ui->getPromptBuffer())) ui->print("0");
+            ui->print(Progmem::getString(Progmem::uiNewLine));
+            break;
+          }
+          
+          ui->print(Progmem::getString(Progmem::uiDeleteLine));
+        }  
+      }
+      
+      if ((startCylinder > 0) || (endCylinder != wdc->getParams()->Cylinders-1))
+      {
+        wdc->getParams()->PartialImage = true;
+        wdc->getParams()->PartialImageStartCyl = startCylinder;
+        wdc->getParams()->PartialImageEndCyl = endCylinder;
+      }
+    }
+  }
   
   // what to do with bad blocks in image
   ui->print(Progmem::getString(Progmem::imgBadBloxOption1));
@@ -420,7 +577,8 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
   memset(data, 0x1A, size);
   
   // end of transfer
-  if (cbCylinder == wdc->getParams()->Cylinders)
+  if ((cbCylinder == wdc->getParams()->Cylinders) ||
+      (wdc->getParams()->PartialImage && (cbCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
   {
     return false;
   }
@@ -624,7 +782,8 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
         cbHead = 0;
         cbCylinder++;
       }
-      if (cbCylinder == wdc->getParams()->Cylinders)
+      if ((cbCylinder == wdc->getParams()->Cylinders) ||
+          (wdc->getParams()->PartialImage && (cbCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
       {
         cbSuccess = true;
         cbProgmemResponseStr = 0;
@@ -893,7 +1052,8 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
       cbHead = 0;
       cbCylinder++;
     }
-    if (cbCylinder == wdc->getParams()->Cylinders)
+    if ((cbCylinder == wdc->getParams()->Cylinders) ||    
+        (wdc->getParams()->PartialImage && (cbCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
     {
       cbSuccess = true;
       cbProgmemResponseStr = 0;
@@ -1067,6 +1227,10 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
       continue;
     }
     
+    // write partial image: skip over data?
+    const bool partialImageSkipData = wdc->getParams()->PartialImage && 
+                                      ((cbCylinder < wdc->getParams()->PartialImageStartCyl) || (cbCylinder > wdc->getParams()->PartialImageEndCyl));
+    
     // allocate sectors table and format
     if (!cbSecMapSpecified)
     {
@@ -1091,7 +1255,18 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
       
       cbLastPos = 0;
       cbSectorIdx = 0;
-      cbSecMapSpecified = true;     
+      cbSecMapSpecified = true;
+      
+      const BYTE sdh = (BYTE)(cbSectorsTable[0] >> 24);
+      const WORD logicalCylinder = (WORD)cbSectorsTable[0];
+      const BYTE logicalHead = sdh & 0xF;        
+      cbSecSizeBytes = wdc->getSectorSizeFromSDH(sdh);
+      
+      // write partial image: skip over
+      if (partialImageSkipData)
+      {
+        continue;
+      }
            
       // since we need to format, and set gaps, make sure there are no variable size sectors,
       // and that the logical cylinder and head numbers do not differ between each other.
@@ -1104,11 +1279,6 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
       wdc->sramBeginBufferAccess(true, 0);
       wdc->sramWriteByteSequential(0);
       wdc->sramWriteByteSequential((BYTE)(cbSectorsTable[0] >> 16));
-      
-      const BYTE sdh = (BYTE)(cbSectorsTable[0] >> 24);
-      const WORD logicalCylinder = (WORD)cbSectorsTable[0];
-      const BYTE logicalHead = sdh & 0xF;        
-      cbSecSizeBytes = wdc->getSectorSizeFromSDH(sdh);
       
       for (WORD idx = 1; idx < cbSpt; idx++)
       {
@@ -1175,7 +1345,7 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
     cbProgmemResponseStr = 0;
     
     // write, depending on type
-    if (cbSectorIdx < cbSpt)
+    if (!partialImageSkipData && (cbSectorIdx < cbSpt))
     {     
       const BYTE sdh = (BYTE)(cbSectorsTable[cbSectorIdx] >> 24);
       const WORD logicalCylinder = (WORD)cbSectorsTable[cbSectorIdx];
@@ -1312,6 +1482,51 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
       }      
     }
     
+    else if (partialImageSkipData) // just skip over data packet
+    {
+      if (cbSectorIdx < cbSpt)
+      {
+        if (cbSectorDataType == 0) // no data would follow
+        {
+          cbSectorIdx++;
+          if (cbSectorIdx < cbSpt)
+          {
+            cbSecDataTypeSpecified = false;
+            continue;
+          }
+        }
+        
+        else
+        {
+          if (cbSectorDataType & 0x80) // 1 byte follows
+          {
+            packetIdx++;
+            cbLastPos++;
+          }
+          else // sector data follows
+          {
+            while (cbLastPos != cbSecSizeBytes)
+            {
+              packetIdx++;              
+              cbLastPos++;            
+              CHECK_STREAM_END;
+            }
+          }
+          
+          // next sector 
+          cbLastPos = 0;        
+          cbSectorIdx++;
+          if (cbSectorIdx < cbSpt)
+          {
+            cbSecDataTypeSpecified = false;
+          }
+          
+          CHECK_STREAM_END;
+          continue;
+        }
+      }
+    }
+    
     // specify next track data field
     cbSectorIdx = 0;
     cbLastPos = 0;
@@ -1351,7 +1566,9 @@ bool CbVerifyParamsFromImage()
   // "-1" or 65535 not considered as valid as these are turned on or off via a flag
   if ((params->WritePrecompStartCyl > 2048) || 
       (params->RWCStartCyl > 2048) ||
-      (params->LandingZone > 2048))
+      (params->LandingZone > 2048) || 
+      (params->PartialImageStartCyl >= params->Cylinders) ||
+      (params->PartialImageEndCyl >= params->Cylinders))
   {
     return false;
   }
@@ -1361,6 +1578,26 @@ bool CbVerifyParamsFromImage()
   {
     cbProgmemResponseStr = Progmem::imgXmodemErrMFMRLL; // inform about mismatch
     return false;
+  }
+  
+  // check partial image bounds
+  if (wdc->getParams()->PartialImage)
+  {
+    cbProgmemResponseStr = Progmem::imgXmodemErrPart;
+    
+    // sanity check
+    if ((wdc->getParams()->PartialImageStartCyl > wdc->getParams()->PartialImageEndCyl) ||
+        (params->PartialImageStartCyl > params->PartialImageEndCyl))
+    {
+      return false;
+    }
+    
+    // nothing to do: the loaded image is already partial, and the supplied start/end bounds are out
+    if ((params->PartialImageStartCyl > wdc->getParams()->PartialImageEndCyl) ||
+        (params->PartialImage && (wdc->getParams()->PartialImageStartCyl > params->PartialImageEndCyl)))
+    {
+      return false;
+    }
   }
   
   cbProgmemResponseStr = backup; // alles in Ordnung

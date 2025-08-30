@@ -362,6 +362,11 @@ void SetupParameters()
   wdc->getParams()->SlowSeek = (key == 'S');
   ui->print(Progmem::getString(Progmem::uiEchoKey), key);
   
+  // later for disk image purposes
+  wdc->getParams()->PartialImage = false;
+  wdc->getParams()->PartialImageStartCyl = 0;
+  wdc->getParams()->PartialImageEndCyl = 0;
+  
   // save settings?
   ui->print(Progmem::getString(Progmem::uiSetupAskSave));
   key = toupper(ui->readKey("YN"));

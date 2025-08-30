@@ -20,7 +20,12 @@ section 2) Source drive information. 32 bytes.
            byte 12: LSB of landing zone cylinder.
            byte 13: MSB of landing zone cylinder.
            byte 14: ST-506 compatible (slow) seek. 0: use buffered (fast) seek.
-           bytes 15-31: Reserved, 0.                      
+           byte 15: 1: this is a partial disk image. 0: whole disk image.
+           byte 16: LSB of starting physical cylinder of a partial disk image.
+           byte 17: MSB of starting physical cylinder of a partial disk image.
+           byte 18: LSB of ending physical cylinder of a partial disk image.
+           byte 19: MSB of ending physical cylinder of a partial disk image.
+           bytes 20-31: Reserved, 0.                      
            
 section 3) Track data fields. One field after the other, for each track on drive.           
 

@@ -140,8 +140,17 @@ class WdiParser:
         # seek type (buffered / ST506)
         seekType = self._file.read(1)[0]
         
+        # does the image not contain all cylinders?
+        partialImage = self._file.read(1)[0]
+        partialImageStartCyl_lsb = self._file.read(1)[0]
+        partialImageStartCyl_msb = self._file.read(1)[0]
+        partialImageStartCyl = (partialImageStartCyl_msb << 8) | partialImageStartCyl_lsb
+        partialImageEndCyl_lsb = self._file.read(1)[0]
+        partialImageEndCyl_msb = self._file.read(1)[0]
+        partialImageEndCyl = (partialImageEndCyl_msb << 8) | partialImageEndCyl_lsb
+        
         # read the padded rest to begin on first data field
-        self._file.read(17)
+        self._file.read(12)
         
         return {"result": True,
                 "description": description,
@@ -155,7 +164,10 @@ class WdiParser:
                 "rwcStartCylinder": rwccyl,
                 "lzEnabled": lzEnabled,
                 "lzStartCylinder": lzcyl,
-                "seekType": seekType}
+                "seekType": seekType,
+                "partialImage": partialImage,
+                "partialImageStartCylinder": partialImageStartCyl,
+                "partialImageEndCylinder": partialImageEndCyl}
                             
     def sdhToSectorSize(self, sdh):
         test = sdh & 0x60;
@@ -221,13 +233,21 @@ class WdiParser:
             phcyl_msb = self._file.read(1)
             if (not phcyl_msb):
             #
+                # XMODEM end-of-file
+                if (self.wasEndOfFile()) and (phcyl_lsb[0] == 0x1A):
+                #
+                    return {"result": True, 
+                            "unreadableTracks": unreadableTracks,
+                            "badBlocks": badBlocks,
+                            "dataErrors": dataErrors}
+                #
                 if (self._verboseErrors):
                     print("Expected physical cylinder MSB, got end-of-file at offset", 
                           hex(self._file.tell()))
                 return {"result": False}
             #
           
-            # XMODEM end-of-file          
+            # XMODEM end-of-file
             if (phcyl_msb[0] == 0x1A):
             #
                 return {"result": True, 

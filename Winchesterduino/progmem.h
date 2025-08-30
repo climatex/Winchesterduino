@@ -178,6 +178,8 @@ public:
     parkRecalibrating,
     
     // image file transfer
+    imgReadWholeDisk,
+    imgWriteWholeDisk,
     imgXmodem1k,
     imgXmodemPrefix,
     imgXmodem1kPrefix,
@@ -194,6 +196,7 @@ public:
     imgXmodemErrHeads,
     imgXmodemErrVar1,
     imgXmodemErrVar2,
+    imgXmodemErrPart,
     imgWriteHeader,
     imgWriteComment,
     imgWriteDone,
@@ -303,7 +306,7 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "17th Jul 2025";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "30th Aug 2025";
   PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";
@@ -416,6 +419,8 @@ private:
   PROGMEM_STR m_parkRecalibrating[]  PROGMEM = "Recalibrating, please wait...";
     
 // image file transfer
+  PROGMEM_STR m_imgReadWholeDisk[]   PROGMEM = "Read whole disk (normally Yes)? Y/N: ";
+  PROGMEM_STR m_imgWriteWholeDisk[]  PROGMEM = "\r\nWrite whole disk image (normally Yes)? Y/N: ";
   PROGMEM_STR m_imgXmodem1k[]        PROGMEM = "Use XMODEM-1K? Y/N: ";
   PROGMEM_STR m_imgXmodemPrefix[]    PROGMEM = "XMODEM: ";
   PROGMEM_STR m_imgXmodem1kPrefix[]  PROGMEM = "XMODEM-1K: ";
@@ -432,6 +437,7 @@ private:
   PROGMEM_STR m_imgXmodemErrHeads[]  PROGMEM = "More physical heads in image than configured";  
   PROGMEM_STR m_imgXmodemErrVar1[]   PROGMEM = "WD42C22 cannot format varying sector sizes in 1 track!";
   PROGMEM_STR m_imgXmodemErrVar2[]   PROGMEM = "WD42C22 cannot format varying cyl/head numbers in 1 track!";
+  PROGMEM_STR m_imgXmodemErrPart[]   PROGMEM = "Nothing to write within the supplied start/end cylinders";
   PROGMEM_STR m_imgWriteHeader[]     PROGMEM = "WDI file created by Winchesterduino, (c) J. Bogin\r\n";
   PROGMEM_STR m_imgWriteComment[]    PROGMEM = "Add file comment (max %u characters per line)\r\n";
   PROGMEM_STR m_imgWriteDone[]       PROGMEM = "Type 2 empty newlines when done\r\n";
@@ -527,11 +533,11 @@ private:
                                                   
                                                   m_parkSuccess, m_parkPowerdownSafe, m_parkContinue, m_parkRecalibrating,
                                                   
-                                                  m_imgXmodem1k, m_imgXmodemPrefix, m_imgXmodem1kPrefix, m_imgXmodemWaitSend, 
-                                                  m_imgXmodemWaitRecv, m_imgXmodemXferEnd, m_imgXmodemXferFail,                                                  
+                                                  m_imgReadWholeDisk, m_imgWriteWholeDisk, m_imgXmodem1k, m_imgXmodemPrefix, m_imgXmodem1kPrefix,
+                                                  m_imgXmodemWaitSend, m_imgXmodemWaitRecv, m_imgXmodemXferEnd, m_imgXmodemXferFail,                                                  
                                                   m_imgXmodemErrPacket, m_imgXmodemErrHeader, m_imgXmodemErrParams, m_imgXmodemErrSecTyp,
                                                   m_imgXmodemErrMFMRLL, m_imgXmodemErrCyls, m_imgXmodemErrHeads,                                                  
-                                                  m_imgXmodemErrVar1, m_imgXmodemErrVar2, m_imgWriteHeader, m_imgWriteComment, 
+                                                  m_imgXmodemErrVar1, m_imgXmodemErrVar2, m_imgXmodemErrPart, m_imgWriteHeader, m_imgWriteComment, 
                                                   m_imgWriteDone, m_imgWriteEnterEsc, m_imgBadBlocks, m_imgBadBlocksKnown, m_imgDataCorrected,
                                                   m_imgDataErrors, m_imgDataErrorsConv, m_imgBadTracks, m_imgOverrideWrite1, 
                                                   m_imgOverrideWrite2, m_imgOverrideWrite3, m_imgBadBloxOption1, m_imgBadBloxOption2,
