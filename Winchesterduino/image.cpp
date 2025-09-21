@@ -4,51 +4,38 @@
 #include "config.h"
 
 // forward decl's
-int  RX(int msDelay);
-void TX(const char *data, int size);
+bool DoReadDisk();
+bool DoWriteDisk();
+bool DoVerifyParamsFromImage();
+bool DoDetectMemoryCard();
+bool DoPickFile(bool writingImage);
 
-// XMODEM callback related
-void CbCleanup();
-bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size);
-bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size);
-bool CbVerifyParamsFromImage();
-
-// values not modified by CbCleanup()
-BYTE cbProgmemResponseStr      = 0;
-bool cbSuccess                 = false;
-DWORD cbTotalDataErrors        = 0;
-DWORD cbTotalCorrectedErrors   = 0;
-DWORD cbTotalBadBlocks         = 0;
-DWORD cbUnreadableTracks       = 0;
+File doImageFile;
+BYTE doProgmemResponseStr      = Progmem::uiEmpty;
+BYTE doParams[32]              = {0};
+BYTE doBuffer[1024]            = {0}; // one disk sector buffer (max. 1K supported)
+DWORD* doSectorsTable          = NULL;
+DWORD doTotalDataErrors        = 0;
+DWORD doTotalCorrectedErrors   = 0;
+DWORD doTotalBadBlocks         = 0;
+DWORD doUnreadableTracks       = 0;
 // write image to disk options:
-bool cbWriteImgOverrideParams  = false;
-BYTE cbWriteImgBadSectorMode   = 0; // 0: bad sectors formatted empty, 1: bad sectors formatted as bad
-BYTE cbWriteImgDataErrorsMode  = 0; // 0: CRC/ECC data errors formatted empty, 1: formatted as bad, 2: written (as good data)
+bool doWriteImgOverrideParams  = false;
+BYTE doWriteImgBadSectorMode   = 0; // 0: bad sectors formatted empty, 1: bad sectors formatted as bad
+BYTE doWriteImgDataErrorsMode  = 0; // 0: CRC/ECC data errors formatted empty, 1: formatted as bad, 2: written (as good data)
 
-// the rest, restored thru CbCleanup()
-bool cbInProgress              = false;
-bool cbProcessingHeader        = true;
-bool cbProcessingDriveTable    = false;
-bool cbCylinderSpecified       = false;
-bool cbHeadSpecified           = false;
-bool cbSptSpecified            = false;
-bool cbSecMapSpecified         = false;
-bool cbSecDataTypeSpecified    = false;
-DWORD cbLastPos                = 0;
-WORD cbCylinder                = 0;
-BYTE cbHead                    = 0;
-BYTE cbSpt                     = 0;
-BYTE cbCurrentSector           = 0;
-BYTE cbParams[32]              = {0};
-DWORD* cbSectorsTable          = NULL;
-WORD cbSectorsTableCount       = 0;
-WORD cbSectorIdx               = 0;
-WORD cbStartingSectorIdx       = (WORD)-1;
-BYTE cbSectorDataType          = 0;
-WORD cbSecSizeBytes            = 0;
+// reuse the DOS inspect command path buffers to address filenames on the microSD card
+extern BYTE path[MAX_PATH+1];
+extern BYTE addPath[MAX_PATH+1];
+int res; // FatFile.read() result
 
 void CommandReadImage()
 { 
+  if (!DoDetectMemoryCard())
+  {
+    return;
+  }
+  
   ui->print(Progmem::getString(Progmem::uiEscGoBack));
   
   // ask to image part of the disk
@@ -126,25 +113,12 @@ void CommandReadImage()
       }
     }
   }
-  
-  // ask to use 1K packets
-  bool useXMODEM1K = false;
-  BYTE* testAlloc = new BYTE[1030];
-  if (testAlloc)
+    
+  // choose file
+  if (!DoPickFile(true))
   {
-    delete[] testAlloc;
-    ui->print(Progmem::getString(Progmem::imgXmodem1k));
-    key = toupper(ui->readKey("YN\e"));
-    if (key == '\e')
-    {
-      ui->print(Progmem::getString(Progmem::uiNewLine));
-      return;
-    }
-    ui->print(Progmem::getString(Progmem::uiEchoKey), key);
-    useXMODEM1K = (key == 'Y');
-  }
-   
-  ui->print(Progmem::getString(Progmem::uiNewLine));
+    return;
+  }  
   
   // use the WDC SRAM buffer to write file description and comment
   wdc->sramBeginBufferAccess(true, 0);
@@ -165,7 +139,7 @@ void CommandReadImage()
     bool emptyLine = false;
     
     // must incl. EOF and NUL
-    while ((len + MAX_PROMPT_LEN + 2) < 2048)
+    while ((len + MAX_PROMPT_LEN + 2) < 32768)
     {
       const BYTE* promptBuffer = ui->prompt();
       WORD promptLen = strlen(promptBuffer);
@@ -191,10 +165,10 @@ void CommandReadImage()
   
   // EOF marks the end of header
   wdc->sramWriteByteSequential(0x1A);
-  wdc->sramBeginBufferAccess(false, 0); // prepare reading
+  wdc->sramFinishBufferAccess();
   
   // copy current disk drive parameters
-  memcpy(&cbParams, wdc->getParams(), sizeof(WD42C22::DiskDriveParams));
+  memcpy(&doParams[0], wdc->getParams(), sizeof(WD42C22::DiskDriveParams));
   
   // seek to the beginning
   if (!wdc->getParams()->PartialImage)
@@ -206,52 +180,46 @@ void CommandReadImage()
     wdc->seekDrive(wdc->getParams()->PartialImageStartCyl, 0);
   }  
   
-  ui->print("");
-  ui->print(Progmem::getString(useXMODEM1K ? Progmem::imgXmodem1kPrefix : Progmem::imgXmodemPrefix));
-  ui->print(Progmem::getString(Progmem::imgXmodemWaitRecv));
-  ui->setPrintDisabled(true);
+  doTotalDataErrors = 0;
+  doTotalCorrectedErrors = 0;
+  doTotalBadBlocks = 0;
+  doUnreadableTracks = 0;
+  doProgmemResponseStr = Progmem::uiEmpty;
+  ui->print(Progmem::getString(Progmem::uiNewLine));
   
-  // reset values that are not modified by CbCleanup()
-  cbProgmemResponseStr = 0;
-  cbSuccess = false;
-  cbInProgress = true;
-  cbTotalDataErrors = 0;
-  cbTotalCorrectedErrors = 0;
-  cbTotalBadBlocks = 0;
-  cbUnreadableTracks = 0;
-  
-  // read and transmit
-  XModem modem(RX, TX, &CbReadDisk, useXMODEM1K);
-  modem.transmit();
-  CbCleanup();
-  DumpSerialTransfer();
+  // read into file
+  const bool success = DoReadDisk();
+  doImageFile.close();
+  sd.end();
+  wdc->sramFinishBufferAccess();
+  if (doSectorsTable)
+  {
+    delete[] doSectorsTable;
+    doSectorsTable = NULL;
+  }
   wdc->selectDrive(false);
    
-  ui->setPrintDisabled(false); 
-  ui->print("");   
   ui->print(Progmem::getString(Progmem::uiDeleteLine));
-  ui->print(Progmem::getString(Progmem::uiVT100ClearScreen));  
-    
-  ui->print(Progmem::getString(cbSuccess ? Progmem::imgXmodemXferEnd : Progmem::imgXmodemXferFail));
+  ui->print(Progmem::getString(success ? Progmem::imgXferEnd : Progmem::imgXferFail));
   ui->print(Progmem::getString(Progmem::uiNewLine));
-  if (cbProgmemResponseStr)
+  if (doProgmemResponseStr)
   {
-    ui->print(Progmem::getString(cbProgmemResponseStr));
+    ui->print(Progmem::getString(doProgmemResponseStr));
     ui->print(Progmem::getString(Progmem::uiNewLine));
   }
    
   // show disk stats
-  if (cbSuccess)
+  if (success)
   {
     ui->print(Progmem::getString(Progmem::uiNewLine));
     ui->print(Progmem::getString(Progmem::imgDiskStats));
-    ui->print(Progmem::getString(Progmem::imgBadBlocks), cbTotalBadBlocks);
-    ui->print(Progmem::getString(Progmem::imgBadTracks), cbUnreadableTracks);
+    ui->print(Progmem::getString(Progmem::imgBadBlocks), doTotalBadBlocks);
+    ui->print(Progmem::getString(Progmem::imgBadTracks), doUnreadableTracks);
     if (wdc->getParams()->DataVerifyMode != MODE_CRC_16BIT)
     {
-      ui->print(Progmem::getString(Progmem::imgDataCorrected), cbTotalCorrectedErrors);  
+      ui->print(Progmem::getString(Progmem::imgDataCorrected), doTotalCorrectedErrors);  
     }    
-    ui->print(Progmem::getString(Progmem::imgDataErrors), cbTotalDataErrors);
+    ui->print(Progmem::getString(Progmem::imgDataErrors), doTotalDataErrors);
   }
   
   ui->print(Progmem::getString(Progmem::uiNewLine));
@@ -262,6 +230,11 @@ void CommandReadImage()
 
 void CommandWriteImage()
 {
+  if (!DoDetectMemoryCard())
+  {
+    return;
+  }
+  
   // override current disk parameters with those from the image?
   ui->print(Progmem::getString(Progmem::imgOverrideWrite1));
   ui->print(Progmem::getString(Progmem::imgOverrideWrite2));
@@ -274,14 +247,14 @@ void CommandWriteImage()
     return;
   }
   ui->print(Progmem::getString(Progmem::uiEchoKey), key);
-  cbWriteImgOverrideParams = (key == 'Y');
+  doWriteImgOverrideParams = (key == 'Y');
   
   // if not, ask whether to work on the whole disk or partial image
   wdc->getParams()->PartialImage = false;
   wdc->getParams()->PartialImageStartCyl = 0;
   wdc->getParams()->PartialImageEndCyl = 0;
   
-  if (!cbWriteImgOverrideParams && (wdc->getParams()->Cylinders > 1))
+  if (!doWriteImgOverrideParams && (wdc->getParams()->Cylinders > 1))
   {
     ui->print(Progmem::getString(Progmem::imgWriteWholeDisk));
     key = toupper(ui->readKey("YN\e"));
@@ -361,7 +334,7 @@ void CommandWriteImage()
     return;
   }
   ui->print(Progmem::getString(Progmem::uiEchoKey), key);
-  cbWriteImgBadSectorMode = (key == 'B') ? 1 : 0;
+  doWriteImgBadSectorMode = (key == 'B') ? 1 : 0;
   
   // what to do with data errors in image
   ui->print(Progmem::getString(Progmem::imgDataErrorsOpt1));
@@ -376,34 +349,21 @@ void CommandWriteImage()
   switch(key)
   {
   case 'E':
-    cbWriteImgDataErrorsMode = 0;
+    doWriteImgDataErrorsMode = 0;
     break;
   case 'B':
-    cbWriteImgDataErrorsMode = 1;
+    doWriteImgDataErrorsMode = 1;
     break;
   case 'G':
-    cbWriteImgDataErrorsMode = 2;
+    doWriteImgDataErrorsMode = 2;
     break;
   }
   
-  // XMODEM-1K
-  bool useXMODEM1K = false;
-  BYTE* testAlloc = new BYTE[1030];
-  if (testAlloc)
+  // choose file
+  if (!DoPickFile(false))
   {
-    delete[] testAlloc;
-    
-    ui->print(Progmem::getString(Progmem::uiNewLine));
-    ui->print(Progmem::getString(Progmem::imgXmodem1k));
-    key = toupper(ui->readKey("YN\e"));
-    if (key == '\e')
-    {
-      ui->print(Progmem::getString(Progmem::uiNewLine));
-      return;
-    }
-    ui->print(Progmem::getString(Progmem::uiEchoKey), key);
-    useXMODEM1K = (key == 'Y');
-  }   
+    return;
+  }     
   
   // make a backup of the current disk parameters struct
   WD42C22::DiskDriveParams backup;
@@ -412,49 +372,41 @@ void CommandWriteImage()
   // seek to the beginning
   wdc->seekDrive(0, 0);
   
-  ui->print("");
-  ui->print(Progmem::getString(useXMODEM1K ? Progmem::imgXmodem1kPrefix : Progmem::imgXmodemPrefix));
-  ui->print(Progmem::getString(Progmem::imgXmodemWaitSend));
-  ui->setPrintDisabled(true);
-  
-  // reset values that are not modified by CbCleanup()
-  cbProgmemResponseStr = 0;
-  cbSuccess = false;
-  cbInProgress = true;
-  cbTotalDataErrors = 0;
-  cbTotalBadBlocks = 0;
-  cbUnreadableTracks = 0;
-  
-  // receive and write
-  XModem modem(RX, TX, &CbWriteDisk, useXMODEM1K);
-  modem.receive();
-  // finished, later ask to restore previous drive settings if it processed fine
-  const bool askRestore = cbWriteImgOverrideParams && !cbProcessingHeader && !cbProcessingDriveTable;
-  CbCleanup();
-  DumpSerialTransfer();
-  wdc->selectDrive(false);
-   
-  ui->setPrintDisabled(false); 
-  ui->print("");   
-  ui->print(Progmem::getString(Progmem::uiDeleteLine));
-  ui->print(Progmem::getString(Progmem::uiVT100ClearScreen));  
-    
-  ui->print(Progmem::getString(cbSuccess ? Progmem::imgXmodemXferEnd : Progmem::imgXmodemXferFail));
+  doTotalDataErrors = 0;
+  doTotalBadBlocks = 0;
+  doUnreadableTracks = 0;
+  doProgmemResponseStr = Progmem::uiEmpty;
   ui->print(Progmem::getString(Progmem::uiNewLine));
-  if (cbProgmemResponseStr)
+  
+  // write disk from file
+  const bool success = DoWriteDisk();
+  doImageFile.close();
+  sd.end();
+  wdc->sramFinishBufferAccess();
+  if (doSectorsTable)
   {
-    ui->print(Progmem::getString(cbProgmemResponseStr));
+    delete[] doSectorsTable;
+    doSectorsTable = NULL;
+  }
+  wdc->selectDrive(false);  
+     
+  ui->print(Progmem::getString(Progmem::uiDeleteLine));
+  ui->print(Progmem::getString(success ? Progmem::imgXferEnd : Progmem::imgXferFail));
+  ui->print(Progmem::getString(Progmem::uiNewLine));
+  if (doProgmemResponseStr)
+  {
+    ui->print(Progmem::getString(doProgmemResponseStr));
     ui->print(Progmem::getString(Progmem::uiNewLine));
   }
    
   // show image and disk stats
-  if (cbSuccess)
+  if (success)
   {
     ui->print(Progmem::getString(Progmem::uiNewLine));
     ui->print(Progmem::getString(Progmem::imgImageStats));
-    ui->print(Progmem::getString(Progmem::imgBadBlocks), cbTotalBadBlocks);
-    ui->print(Progmem::getString(Progmem::imgBadTracks), cbUnreadableTracks); 
-    ui->print(Progmem::getString(Progmem::imgDataErrors), cbTotalDataErrors);
+    ui->print(Progmem::getString(Progmem::imgBadBlocks), doTotalBadBlocks);
+    ui->print(Progmem::getString(Progmem::imgBadTracks), doUnreadableTracks); 
+    ui->print(Progmem::getString(Progmem::imgDataErrors), doTotalDataErrors);
     ui->print(Progmem::getString(Progmem::imgRunScan));    
   }
   
@@ -463,7 +415,8 @@ void CommandWriteImage()
   ui->readKey("\r");  
   ui->print(Progmem::getString(Progmem::uiNewLine));
   
-  if (askRestore)
+  // ask to restore back original disk parameters, if changed
+  if (doWriteImgOverrideParams && (memcmp(wdc->getParams(), &backup, sizeof(WD42C22::DiskDriveParams)) != 0))
   {
     ui->print(Progmem::getString(Progmem::imgRestoreParams));
     key = toupper(ui->readKey("RK"));
@@ -478,265 +431,118 @@ void CommandWriteImage()
   }
 }
 
-// XMODEM
-int RX(int msDelay) 
-{ 
-  const DWORD start = millis();
-  while ((millis()-start) < msDelay)
-  { 
-    if (Serial.available())
-    {
-      return (BYTE)Serial.read();
+// read disk into file
+bool DoReadDisk()
+{
+  
+  // write WDI header and comment from SRAM to output file        
+  wdc->sramBeginBufferAccess(false, 0);
+  for (;;)
+  {
+    doBuffer[0] = wdc->sramReadByteSequential();
+    SD_WRITE(1);
+    
+    if (doBuffer[0] == 0x1A)
+    {          
+      wdc->sramFinishBufferAccess();          
+      break;
     }
   }
-
-  return -1; 
-}
-
-void TX(const char *data, int size)
-{  
-  Serial.write((const BYTE*)data, size);
-}
-
-bool IsSerialTransfer()
-{
-  return cbInProgress;
-}
-
-// dump serial transfer if not successful
-void DumpSerialTransfer()
-{
-  const BYTE CAN = 0x18;
+    
+  // write DiskDriveParams to a total of 32 bytes; unused values pre-set to 0
+  memcpy(&doBuffer[0], &doParams[0], sizeof(doParams));
+  SD_WRITE(sizeof(doParams)); 
   
-  DWORD delayMs = millis() + 10;
-  while (millis() < delayMs)
+  ui->print(Progmem::getString(Progmem::scanProgress), wdc->getPhysicalCylinder());
+  
+  // process specified tracks
+  for (;;)
   {
-    if (Serial.read() >= 0)
+    // current physical cylinder and head
+    WORD currentCylinder = wdc->getPhysicalCylinder();
+    memcpy(&doBuffer[0], &currentCylinder, sizeof(WORD));
+    SD_WRITE(sizeof(WORD)); 
+    
+    BYTE currentHead = wdc->getPhysicalHead();
+    doBuffer[0] = currentHead;
+    SD_WRITE(1);    
+           
+    // sectors per track: get SDH byte, 5 attempts
+    BYTE spt = 0;
+    BYTE sdh = 0;
+    BYTE attempts = 5;
+    while (attempts)
     {
-      delayMs = millis() + 10;
-    }
-  }
-  
-  while (Serial.available() > 0)
-  {
-    Serial.read(); 
-  }
-  
-  Serial.write(&CAN, sizeof(BYTE));
-  Serial.write(&CAN, sizeof(BYTE));
-  Serial.write(&CAN, sizeof(BYTE));
-}
-
-void CbCleanup()
-{
-  if (cbSectorsTable)
-  {
-    delete[] cbSectorsTable;
-    cbSectorsTable = NULL;
-  }
-  
-  cbInProgress              = false;
-  cbProcessingHeader        = true;
-  cbProcessingDriveTable    = false;
-  cbCylinderSpecified       = false;
-  cbHeadSpecified           = false;
-  cbSptSpecified            = false;
-  cbSecMapSpecified         = false;
-  cbSecDataTypeSpecified    = false;
-  
-  cbLastPos                 = 0;
-  cbCylinder                = 0;
-  cbHead                    = 0;
-  cbSpt                     = 0;
-  cbCurrentSector           = 0;
-  cbSectorsTableCount       = 0;
-  cbSectorIdx               = 0;
-  cbStartingSectorIdx       = (WORD)-1;
-  cbSectorDataType          = 0;
-  cbSecSizeBytes            = 0;
-  
-  memset(&cbParams, 0, sizeof(cbParams));
-  
-  wdc->sramFinishBufferAccess();
-}
-
-// read disk callback
-bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
-{
-  WORD packetIdx = 0;
-  
-  if (!data || ((size != 128) && (size != 1024)))
-  {
-    cbSuccess = false;
-    cbProgmemResponseStr = Progmem::imgXmodemErrPacket;
-    return false;
-  }
-  
-  // fill the output buffer with ASCII EOF (end-of-file) padding so it's known where the transfer ended
-  // as XMODEM sends fixed 128B or 1024B packets
-  memset(data, 0x1A, size);
-  
-  // end of transfer
-  if ((cbCylinder == wdc->getParams()->Cylinders) ||
-      (wdc->getParams()->PartialImage && (cbCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
-  {
-    return false;
-  }
-  
-  for(;;)
-  {
-    // write WDI header and comment from SRAM to output file
-    if (cbProcessingHeader)
-    {       
-      for (;;)
+      WORD dummy;
+      BYTE dummy2;        
+      wdc->scanID(dummy, dummy2, sdh);
+      
+      // WDC timeout, drive not ready, writefault
+      if (wdc->getLastError())
       {
-        const BYTE sramByte = wdc->sramReadByteSequential();
-        data[packetIdx++] = sramByte;
-        
-        if (sramByte == 0x1A)
+        if (wdc->getLastError() < 4)
         {
-          cbProcessingHeader = false;
-          cbProcessingDriveTable = true;
-          cbLastPos = 0;
-          
-          wdc->sramFinishBufferAccess();          
-          break;
+          doProgmemResponseStr = wdc->getLastErrorMessage();
+          return false;
         }
         
-        CHECK_STREAM_END;
+        attempts--;
       }
-      
-      CHECK_STREAM_END;
-    }
-    
-    // write DiskDriveParams to a total of 32 bytes; unused values pre-set to 0
-    if (cbProcessingDriveTable)
-    {
-      while (cbLastPos < sizeof(cbParams))
+      else
       {
-        data[packetIdx++] = cbParams[cbLastPos++];
-        CHECK_STREAM_END;
+        break;
       }
-      
-      cbLastPos = 0;
-      cbProcessingDriveTable = false;
     }
     
-    // current physical cylinder
-    if (!cbCylinderSpecified)
+    if (doSectorsTable)
     {
-      cbCylinder = wdc->getPhysicalCylinder();
-      
-      if (cbLastPos == 0) // LSB
+      delete[] doSectorsTable;
+      doSectorsTable = NULL;
+    }
+    
+    bool cylindersMismatch = false;
+    bool headsMismatch = false;
+    bool variableSectorSize = false;
+    
+    WORD sectorsTableCount = 0;
+    WORD sectorIdx = 0;
+    WORD startingSectorIdx = (WORD)-1;
+    WORD startingSector = 0;
+    BYTE lastPos = 0;
+    BYTE currentSector = 0;    
+    
+    // no error - now calculate SPT
+    if (attempts)
+    {
+      doSectorsTable = CalculateSectorsPerTrack(sdh, spt, sectorsTableCount, headsMismatch, cylindersMismatch, variableSectorSize);
+      if (!doSectorsTable && !sectorsTableCount)
       {
-        data[packetIdx++] = (BYTE)cbCylinder;
-        cbLastPos++;
-        CHECK_STREAM_END;
-      }
-      
-      data[packetIdx++] = (BYTE)(cbCylinder >> 8); // MSB
-      cbCylinderSpecified = true;
-      cbLastPos = 0;
-      CHECK_STREAM_END;
-    }
-    
-    // head
-    if (!cbHeadSpecified)
-    {
-      cbHead = wdc->getPhysicalHead();
-      data[packetIdx++] = cbHead;
-      cbHeadSpecified = true;
-      CHECK_STREAM_END;
-    }
-    
-    // sectors per track
-    if (!cbSptSpecified)
-    {
-      if (!wdc->seekDrive(cbCylinder, cbHead))
-      {
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::uiFeSeek;
+        ui->fatalError(Progmem::uiFeMemory);
         return false;
       }
       
-      if (cbSectorsTable)
-      {
-        delete[] cbSectorsTable;
-        cbSectorsTable = NULL;
-      }
-      cbSectorsTableCount = 0;
-      
-      // get SDH byte, 5 attempts
-      BYTE sdh;
-      BYTE attempts = 5;
-      while (attempts)
-      {
-        WORD dummy;
-        BYTE dummy2;        
-        wdc->scanID(dummy, dummy2, sdh);
-        
-        // WDC timeout, drive not ready, writefault
-        if (wdc->getLastError())
-        {
-          if (wdc->getLastError() < 4)
-          {
-            cbSuccess = false;
-            cbProgmemResponseStr = wdc->getLastErrorMessage();
-            return false;
-          }
-          
-          attempts--;
-        }
-        else
-        {
-          break;
-        }
-      }
-      
-      // no single valid sector ID found
-      if (!attempts)
-      {
-        cbSpt = 0;
-        cbSptSpecified = true;
-        data[packetIdx++] = cbSpt;
-        CHECK_STREAM_END;
-        
-        continue;
-      }      
-            
-      // now calculate SPT
-      bool dummy3;
-      cbSectorsTable = CalculateSectorsPerTrack(sdh, cbSpt, cbSectorsTableCount, dummy3, dummy3, dummy3);
-      if (!cbSectorsTable && !cbSectorsTableCount)
-      {
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::uiFeMemory;
-        return false;
-      }
-      
-      if (cbSpt)
+      // SPT valid
+      if (spt)
       {
         // as the interleave table almost always never starts from the beginning, find the starting sector
-        // but even the starting sector number might not start from 0
-        WORD startingSector = 0;
-        
-        while (cbStartingSectorIdx == (WORD)-1) // undefined
+        // but even the starting sector number might not start from 0        
+        while (startingSectorIdx == (WORD)-1) // undefined
         {
           bool found = false;
           
-          for (WORD idx = 0; idx < cbSectorsTableCount; idx++)
+          for (WORD idx = 0; idx < sectorsTableCount; idx++)
           {                   
-            if (cbSectorsTable[idx] == 0xFFFFFFFFUL) // undefined?
+            if (doSectorsTable[idx] == 0xFFFFFFFFUL) // undefined?
             {
               continue;
             }
             
             // logical sector number matching?
-            if ((BYTE)(cbSectorsTable[idx] >> 16) == startingSector)
+            if ((BYTE)(doSectorsTable[idx] >> 16) == startingSector)
             {
-              cbStartingSectorIdx = idx;
-              cbSectorIdx = cbStartingSectorIdx;
-              cbLastPos = 0; // use this as count how many were written in the map
+              startingSectorIdx = idx;
+              sectorIdx = startingSectorIdx;
+              lastPos = 0; // use this as count how many were written in the map
               found = true;
               break;
             }
@@ -750,261 +556,71 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
           startingSector++;  // starts from 1, 2 or whatever
           if (startingSector > 255) // cannot sync
           {
-            cbSpt = 0; // mark track as unreadable
+            spt = 0; // mark track as unreadable
             break;
           }
         }
       }
- 
-      cbSptSpecified = true;
-      data[packetIdx++] = cbSpt;
-      CHECK_STREAM_END;
-    }
+    }      
+    
+    // store SPT
+    doBuffer[0] = spt;
+    SD_WRITE(1);
     
     // track contains no sectors?
-    if (!cbSpt)
+    if (!spt)
     {
-      cbUnreadableTracks++;
-      
-      // re-specify
-      cbCylinderSpecified = false;
-      cbHeadSpecified = false;
-      cbSptSpecified = false;
-      cbSecMapSpecified = false;
-      cbLastPos = 0;
-      cbSectorIdx = 0;
-      cbStartingSectorIdx = (WORD)-1;
-      
+      doUnreadableTracks++;
+            
       // seek to the next
-      cbHead++;
-      if (cbHead == wdc->getParams()->Heads)
+      currentHead++;
+      if (currentHead == wdc->getParams()->Heads)
       {
-        cbHead = 0;
-        cbCylinder++;
+        currentHead = 0;
+        currentCylinder++;
+        
+        ui->print(Progmem::getString(Progmem::scanProgress), currentCylinder);
       }
-      if ((cbCylinder == wdc->getParams()->Cylinders) ||
-          (wdc->getParams()->PartialImage && (cbCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
+      if ((currentCylinder == wdc->getParams()->Cylinders) ||
+          (wdc->getParams()->PartialImage && (currentCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
       {
-        cbSuccess = true;
-        cbProgmemResponseStr = 0;
-        return true; // flush the buffer
-      }
-      
-      if (!wdc->seekDrive(cbCylinder, cbHead))
-      {
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::uiFeSeek;
-        return false;
+        doProgmemResponseStr = Progmem::uiEmpty;
+        return true; // done
       }
       
+      wdc->seekDrive(currentCylinder, currentHead);      
       continue; // transfer continues
     }
     
-    // sector numbering map
-    if (!cbSecMapSpecified)
+    // prepare sector numbering map
+_j1: 
+    while ((lastPos < spt) && (sectorIdx < sectorsTableCount))
     {
-      static BYTE sectorMapPos = 0;      
-      
-      // now write the sector numbering map
-      while ((cbLastPos < (WORD)cbSpt*4) && (cbSectorIdx < cbSectorsTableCount))
+      if (doSectorsTable[sectorIdx] == 0xFFFFFFFFUL) // undefined?
       {
-        if (cbSectorsTable[cbSectorIdx] == 0xFFFFFFFFUL) // undefined?
-        {
-          cbSectorIdx++;
-          sectorMapPos = 0;
-          continue;
-        }
-        
-        cbCurrentSector = (BYTE)(cbSectorsTable[cbSectorIdx] >> 16);
-        
-        const BYTE* sectorMap = (const BYTE*)(&cbSectorsTable[cbSectorIdx]); // access by bytes
-        data[packetIdx++] = sectorMap[sectorMapPos++];
-        
-        cbLastPos++;
-        if ((cbLastPos % 4) == 0)
-        {
-          cbSectorIdx++; // 4 bytes per each sector
-          sectorMapPos = 0;
-        }
-        CHECK_STREAM_END;       
-      }
-      
-      // sectors per track count not reached: do we still need to go from the beginning of the table?
-      if ((cbSectorIdx == cbSectorsTableCount) && (cbLastPos < (WORD)cbSpt*4))
-      {
-        sectorMapPos = 0;
-        bool found = false;
-            
-        while (cbCurrentSector && !found)
-        {
-          for (cbSectorIdx = 0; cbSectorIdx < cbSectorsTableCount; cbSectorIdx++)
-          {
-            if ((((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector) &&
-                 (cbSectorsTable[cbSectorIdx] != 0xFFFFFFFFUL))
-            {
-              found = true;
-              break;
-            }
-          }
-          
-          if (!found)
-          {
-            cbCurrentSector++; // possible gap?
-          }
-        }            
-        
-        // found from the beginning, get the succeeding sector index
-        if (found)
-        {
-          cbSectorIdx += 1;
-          if (cbSectorIdx < cbSectorsTableCount)
-          {
-            continue; // valid
-          }
-        }
-
-        // not found or out-of-bounds
-        cbSectorIdx = 0;
+        sectorIdx++;
         continue;
       }
       
-      cbSectorIdx = cbStartingSectorIdx;
-      cbLastPos = 0;
-      sectorMapPos = 0;
-      cbCurrentSector = 0;
-      cbSecMapSpecified = true;
+      currentSector = (BYTE)(doSectorsTable[sectorIdx] >> 16);
+      memcpy(&doBuffer[0], &doSectorsTable[sectorIdx], sizeof(DWORD));
+      SD_WRITE(sizeof(DWORD));
+      
+      lastPos++;
+      sectorIdx++;
     }
     
-    // now try to read    
-    while ((cbLastPos < cbSpt) && (cbSectorIdx < cbSectorsTableCount))
-    {     
-      static WORD rwBufferPos = 0;
-      
-      if (!cbSecDataTypeSpecified) // determine data record type
-      {
-        rwBufferPos = 0;
-        
-        if (cbSectorsTable[cbSectorIdx] == 0xFFFFFFFFUL) // skip undefined
-        {
-          cbSectorIdx++;
-          continue;
-        }
-        
-        const BYTE sdh = (BYTE)(cbSectorsTable[cbSectorIdx] >> 24);        
-        cbSecSizeBytes = wdc->getSectorSizeFromSDH(sdh);        
-        
-        const BYTE logicalSector = (BYTE)(cbSectorsTable[cbSectorIdx] >> 16);
-        cbCurrentSector = logicalSector;
-        const WORD logicalCylinder = (WORD)cbSectorsTable[cbSectorIdx];
-        const BYTE logicalHead = sdh & 0xF;        
-        
-        wdc->readSector(logicalSector, cbSecSizeBytes, false, &logicalCylinder, &logicalHead);     
-        if (wdc->getLastError())
-        {
-          if (wdc->getLastError() < 4) // WDC timeout, drive not ready, writefault
-          {
-            cbSuccess = false;
-            cbProgmemResponseStr = wdc->getLastErrorMessage();
-            return false;
-          }
-          
-          else if (wdc->getLastError() == WDC_CORRECTED) // treat successful ECC correction as OK
-          {
-            cbSectorDataType = 1;
-            cbTotalCorrectedErrors++;
-          }
-        
-          else if (wdc->getLastError() == WDC_DATAERROR) // we have data, but likely faulty
-          {
-            cbSectorDataType = 2;
-            cbTotalDataErrors++;
-          }
-          
-          else // no data in buffer
-          {
-            cbSectorDataType = 0;
-            cbTotalBadBlocks++;
-          }
-        }
-        else
-        {
-          cbSectorDataType = 1; // valid data
-        }
-        
-        // determine whether to compress the data
-        if (cbSectorDataType)
-        {
-          wdc->sramBeginBufferAccess(false, 0);
-          bool compressedData = true;
-          BYTE lastData = wdc->sramReadByteSequential();
-          
-          for (WORD idx = 1; idx < cbSecSizeBytes; idx++)
-          {
-            const BYTE currData = wdc->sramReadByteSequential();
-            if (currData != lastData)
-            {
-              compressedData = false;
-              break;
-            }
-            lastData = currData;
-          }
-          
-          if (compressedData)
-          {
-            cbSectorDataType |= 0x80; //set bit 7
-          }
-          
-          wdc->sramBeginBufferAccess(false, 0); // rewind SRAM buffer          
-        }      
-        
-        data[packetIdx++] = cbSectorDataType; 
-        cbSecDataTypeSpecified = true;
-        CHECK_STREAM_END;
-      }
-                
-      // data is ready
-      switch(cbSectorDataType)
-      {
-      case 1:
-      case 2:      
-      {
-        while (rwBufferPos != cbSecSizeBytes)
-        {
-          data[packetIdx++] = wdc->sramReadByteSequential();
-          rwBufferPos++;
-          CHECK_STREAM_END;
-        }
-        rwBufferPos = 0;
-        wdc->sramFinishBufferAccess();
-      }
-      break;
-      case 0x81:
-      case 0x82:      
-      {
-        // compressed data (same byte repeated secSizeBytes)
-        data[packetIdx++] = wdc->sramReadByteSequential();
-        wdc->sramFinishBufferAccess();
-        cbSectorDataType = 0; // go to next sector
-        CHECK_STREAM_END;
-      }
-      break;
-      }
-      
-      // next sector
-      cbSectorIdx++;
-      cbLastPos++;
-      cbSecDataTypeSpecified = false;
-    }    
-    if ((cbSectorIdx == cbSectorsTableCount) && (cbLastPos < cbSpt))
+    // sectors per track count not reached: do we still need to go from the beginning of the table?
+    if ((sectorIdx == sectorsTableCount) && (lastPos < spt))
     {
       bool found = false;
-            
-      while (cbCurrentSector && !found)
+          
+      while (currentSector && !found)
       {
-        for (cbSectorIdx = 0; cbSectorIdx < cbSectorsTableCount; cbSectorIdx++)
+        for (sectorIdx = 0; sectorIdx < sectorsTableCount; sectorIdx++)
         {
-          if ((((BYTE)(cbSectorsTable[cbSectorIdx] >> 16)) == cbCurrentSector) &&
-               (cbSectorsTable[cbSectorIdx] != 0xFFFFFFFFUL))
+          if ((((BYTE)(doSectorsTable[sectorIdx] >> 16)) == currentSector) &&
+               (doSectorsTable[sectorIdx] != 0xFFFFFFFFUL))
           {
             found = true;
             break;
@@ -1013,362 +629,566 @@ bool CbReadDisk(DWORD packetNo, BYTE* data, WORD size)
         
         if (!found)
         {
-          cbCurrentSector++;
+          currentSector++; // possible gap?
+        }
+      }            
+      
+      // found from the beginning, get the succeeding sector index
+      if (found)
+      {
+        sectorIdx += 1;
+        if (sectorIdx < sectorsTableCount)
+        {
+          goto _j1; // valid
+        }
+      }
+
+      // not found or out-of-bounds
+      sectorIdx = 0;
+      goto _j1;
+    }
+    
+    sectorIdx = startingSectorIdx;
+    lastPos = 0;
+    currentSector = 0;
+    WORD secSizeBytes = 0;    
+    
+    // now try to read
+    bool readSectorBySector = false; // true: read whole track
+    if (headsMismatch || cylindersMismatch || variableSectorSize)
+    {
+      readSectorBySector = true;
+    }
+    else // try to read whole track in one go
+    {
+      secSizeBytes = wdc->getSectorSizeFromSDH((BYTE)(doSectorsTable[startingSectorIdx] >> 24));
+      
+      if ((DWORD)secSizeBytes*spt > 32768) // the WD42C22 can address a maximum of 32K
+      {
+        readSectorBySector = true;
+      }
+      else
+      {
+        wdc->readTrack(spt, secSizeBytes, (BYTE)(doSectorsTable[startingSectorIdx] >> 16));
+        
+        if (wdc->getLastError())
+        {
+          if (wdc->getLastError() < 4) // WDC timeout, drive not ready, writefault
+          {
+            doProgmemResponseStr = wdc->getLastErrorMessage();
+            return false;
+          }
+          
+          readSectorBySector = true; // fallback due to bad sectors, gaps, etc.
+        }
+      }      
+    }
+
+_j2:
+    while ((lastPos < spt) && (sectorIdx < sectorsTableCount))
+    {     
+      if (doSectorsTable[sectorIdx] == 0xFFFFFFFFUL) // skip undefined
+      {
+        sectorIdx++;
+        continue;
+      }
+      
+      const BYTE logicalSector = (BYTE)(doSectorsTable[sectorIdx] >> 16);
+      currentSector = logicalSector;
+      BYTE sectorDataType = 0;
+      
+      if (!readSectorBySector) // whole track
+      {
+        sectorDataType = 1; // read call went without errors; set as valid
+      }
+      else // single sectors
+      {
+        const BYTE sdh = (BYTE)(doSectorsTable[sectorIdx] >> 24);        
+        secSizeBytes = wdc->getSectorSizeFromSDH(sdh);              
+        const BYTE logicalHead = sdh & 0xF;        
+        const WORD logicalCylinder = (WORD)doSectorsTable[sectorIdx];      
+        
+        wdc->readSector(logicalSector, secSizeBytes, false, &logicalCylinder, &logicalHead);     
+        if (wdc->getLastError())
+        {
+          if (wdc->getLastError() < 4) // WDC timeout, drive not ready, writefault
+          {
+            doProgmemResponseStr = wdc->getLastErrorMessage();
+            return false;
+          }
+          
+          else if (wdc->getLastError() == WDC_CORRECTED) // treat successful ECC correction as OK
+          {
+            sectorDataType = 1;
+            doTotalCorrectedErrors++;
+          }
+        
+          else if (wdc->getLastError() == WDC_DATAERROR) // we have data, but likely faulty
+          {
+            sectorDataType = 2;
+            doTotalDataErrors++;
+          }
+          
+          else // no data in buffer
+          {
+            sectorDataType = 0;
+            doTotalBadBlocks++;
+          }
+        }
+        else
+        {
+          sectorDataType = 1; // valid data
+        }
+      }
+      
+      // determine whether to compress the data
+      if (sectorDataType)
+      {
+        WORD offset = 0;
+        if (!readSectorBySector) // whole track already read in SRAM, setup proper offset
+        {
+          offset = (logicalSector-startingSector)*secSizeBytes;
+        }
+        
+        wdc->sramBeginBufferAccess(false, offset);
+        bool compressedData = true;
+        BYTE lastData = wdc->sramReadByteSequential();
+        
+        for (WORD idx = 1; idx < secSizeBytes; idx++)
+        {
+          const BYTE currData = wdc->sramReadByteSequential();
+          if (currData != lastData)
+          {
+            compressedData = false;
+            break;
+          }
+          lastData = currData;
+        }
+               
+        if (compressedData)
+        {
+          sectorDataType |= 0x80; //set bit 7
+        }
+        
+        wdc->sramBeginBufferAccess(false, offset); // rewind SRAM buffer          
+      }      
+      
+      // write sector data type byte
+      doBuffer[0] = sectorDataType; 
+      SD_WRITE(1);      
+                
+      // data is ready
+      switch(sectorDataType)
+      {
+      case 1:
+      case 2:      
+      {
+        WORD count = 0;
+        while (count != secSizeBytes)
+        {
+          doBuffer[count++] = wdc->sramReadByteSequential();
+        }
+        SD_WRITE(count);
+        wdc->sramFinishBufferAccess();
+      }
+      break;
+      case 0x81:
+      case 0x82:      
+      {
+        // compressed data (same byte repeated secSizeBytes)
+        doBuffer[0] = wdc->sramReadByteSequential();
+        SD_WRITE(1);
+        wdc->sramFinishBufferAccess();
+      }
+      break;
+      }
+      
+      // next sector
+      sectorIdx++;
+      lastPos++;
+    }    
+    if ((sectorIdx == sectorsTableCount) && (lastPos < spt))
+    {
+      bool found = false;
+            
+      while (currentSector && !found)
+      {
+        for (sectorIdx = 0; sectorIdx < sectorsTableCount; sectorIdx++)
+        {
+          if ((((BYTE)(doSectorsTable[sectorIdx] >> 16)) == currentSector) &&
+               (doSectorsTable[sectorIdx] != 0xFFFFFFFFUL))
+          {
+            found = true;
+            break;
+          }
+        }
+        
+        if (!found)
+        {
+          currentSector++;
         }
       }            
       
       if (found)
       {
-        cbSectorIdx += 1;
-        if (cbSectorIdx < cbSectorsTableCount)
+        sectorIdx += 1;
+        if (sectorIdx < sectorsTableCount)
         {
-          continue;
+          goto _j2;
         }
       }
       
-      cbSectorIdx = 0;
-      continue;
+      sectorIdx = 0;
+      goto _j2;
     }
        
     // end of track?
-    cbSuccess = true;
-    cbProgmemResponseStr = 0;
-
-    // re-specify
-    cbCylinderSpecified = false;
-    cbHeadSpecified = false;
-    cbSptSpecified = false;
-    cbSecMapSpecified = false;
-    cbSecDataTypeSpecified = false;
-    cbLastPos = 0;
-    cbSectorIdx = 0;
-    cbCurrentSector = 0;
-    cbStartingSectorIdx = (WORD)-1;   
+    doProgmemResponseStr = Progmem::uiEmpty;
     
     // and seek to next
-    cbHead++;
-    if (cbHead == wdc->getParams()->Heads)
+    currentHead++;
+    if (currentHead == wdc->getParams()->Heads)
     {
-      cbHead = 0;
-      cbCylinder++;
+      currentHead = 0;
+      currentCylinder++;
+      
+      ui->print(Progmem::getString(Progmem::scanProgress), currentCylinder);
     }
-    if ((cbCylinder == wdc->getParams()->Cylinders) ||    
-        (wdc->getParams()->PartialImage && (cbCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
+    if ((currentCylinder == wdc->getParams()->Cylinders) ||    
+        (wdc->getParams()->PartialImage && (currentCylinder-1 == wdc->getParams()->PartialImageEndCyl)))
     {
-      cbSuccess = true;
-      cbProgmemResponseStr = 0;
-      return true; // flush the buffer
+      doProgmemResponseStr = Progmem::uiEmpty;
+      return true; // done
     }
 
-    if (!wdc->seekDrive(cbCylinder, cbHead))
-    {
-      cbSuccess = false;
-      cbProgmemResponseStr = Progmem::uiFeSeek;
-      return false;
-    } 
+    wdc->seekDrive(currentCylinder, currentHead);
   }
   
-  return false;   
+  // infinite loop
 }
 
-// write disk callback
-bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
+// write disk from file
+bool DoWriteDisk()
 { 
-  WORD packetIdx = 0;
   
-  // what?
-  if (!data || ((size != 128) && (size != 1024)))
+  // first step: check the header of variable length; skip its contents (needs to end with EOF)
+  // verify it begins with "WDI " otherwise abort
+  SD_READ(4);
+  if (memcmp(&doBuffer[0], "WDI ", 4) != 0)
   {
-    cbSuccess = false;
-    cbProgmemResponseStr = Progmem::imgXmodemErrPacket;
+    doProgmemResponseStr = Progmem::imgXferErrHeader;
     return false;
   }
   
-  // repeat until the packet is exhausted; returns true to ask for next, or returns false on error/transfer over
+  // keep looking for ASCII EOF marking the end of header
   for (;;)
   {
-    // first step: check the header of variable length; skip its contents (needs to end with EOF)
-    if (cbProcessingHeader)
-    {     
-      if (packetNo == 1)
-      {
-        // have the message ready in case we abort
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::imgXmodemErrHeader;
-        
-        // verify it begins with "WDI " otherwise abort
-        if (memcmp(data, "WDI ", 4) != 0)
-        {
-          return false;
-        }
-        packetIdx += 4;  
-      }      
+    int eof = doImageFile.read();
+    if (eof == -1)
+    {
+      doProgmemResponseStr = Progmem::imgXferErrHeader;
+      return false;
+    }
+    else if (eof == 0x1A) // EOF
+    {
+      break;
+    }
+  }
+ 
+  // now copy 32 bytes of drive table into our array and then check it for validity
+  SD_READ(sizeof(doParams));
+  memcpy(&doParams[0], &doBuffer[0], sizeof(doParams));
+  if (!DoVerifyParamsFromImage())
+  {
+    return false; // response text prepared
+  }
       
-      // keep looking for ASCII EOF marking the end of header      
-      while (cbProcessingHeader)
-      {
-        if (data[packetIdx] == 0x1A) // EOF
-        {          
-          cbProcessingHeader = false;
-          cbProcessingDriveTable = true;
-          cbProgmemResponseStr = 0; // header skipped OK as it contains text description only
-          cbLastPos = 0;
-        }
-        packetIdx++;
-        
-        // always take care if we're not at the end of the 128B/1024B datastream 
-        CHECK_STREAM_END;
-      }
+  // apply new parameters?
+  if (doWriteImgOverrideParams)
+  {
+    memcpy(wdc->getParams(), &doParams[0], sizeof(WD42C22::DiskDriveParams));
+    wdc->applyParams();
+    
+    if (wdc->getLastError())
+    {
+      doProgmemResponseStr = wdc->getLastErrorMessage();
+      return false;
+    }
+  }
+  
+  // process tracks in image
+  bool firstRun = true;
+  ui->print(Progmem::getString(Progmem::uiOperationPending));
+  
+  for (;;)
+  {
+    if (doSectorsTable) // next track?
+    {
+      delete[] doSectorsTable;
+      doSectorsTable = NULL;
     }
     
-    // copy 32 bytes of drive table into our array and then check it for validity
-    if (cbProcessingDriveTable)
+    if (doImageFile.curPosition() == doImageFile.fileSize()) // end-of-file
     {
-      while (cbLastPos < sizeof(cbParams))
-      {
-        cbParams[cbLastPos++] = data[packetIdx++];
-        CHECK_STREAM_END;
-      }
-      cbLastPos = 0;
-      
-      if (!CbVerifyParamsFromImage())
-      {
-        cbSuccess = false; // response text prepared
-        return false;
-      }
-      
-      // apply new parameters?
-      if (cbWriteImgOverrideParams)
-      {
-        memcpy(wdc->getParams(), &cbParams[0], sizeof(WD42C22::DiskDriveParams));
-        wdc->applyParams();
-        
-        if (wdc->getLastError())
-        {
-          cbSuccess = false;
-          cbProgmemResponseStr = wdc->getLastErrorMessage();
-          return false;
-        }
-      }
-      
-      cbProcessingDriveTable = false;
+      doProgmemResponseStr = Progmem::uiEmpty;
+      return true;
     }
     
     // current physical cylinder
-    if (!cbCylinderSpecified)
-    {     
-      if (cbSectorsTable) // next?
-      {
-        delete[] cbSectorsTable;
-        cbSectorsTable = NULL;
-      }
-      
-      if (cbLastPos == 0) // LSB
-      {
-        cbCylinder = data[packetIdx++];
-        cbLastPos++;
-        CHECK_STREAM_END;
-      }
-      
-      // MSB 0..7
-      BYTE byte = data[packetIdx++];
-      if (byte == 0x1A) // end-of-file? transfer over
-      {
-        cbSuccess = true;
-        cbProgmemResponseStr = 0;
-        return false;
-      }
-      cbCylinder |= (WORD)(byte << 8);
-      
-      // check if within bounds
-      if (cbCylinder >= wdc->getParams()->Cylinders)
-      {
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::imgXmodemErrCyls;
-        return false;
-      }
-      
-      cbCylinderSpecified = true;
-      cbLastPos = 0;
-      CHECK_STREAM_END;
+    SD_READ(sizeof(WORD));
+    if (doBuffer[1] == 0x1A) // XMODEM end-of-file marker, transfer over
+    {
+      doProgmemResponseStr = Progmem::uiEmpty;
+      return true;
+    }
+    
+    WORD currentCylinder = 0;
+    memcpy(&currentCylinder, &doBuffer[0], sizeof(WORD));
+    if (currentCylinder >= wdc->getParams()->Cylinders) // check if within bounds
+    {
+      doProgmemResponseStr = Progmem::imgXferErrCyls;
+      return false;
     }
     
     // head
-    if (!cbHeadSpecified)
+    SD_READ(1);
+    BYTE currentHead = doBuffer[0];
+    if (currentHead >= wdc->getParams()->Heads)
     {
-      cbHead = data[packetIdx++];
-      if (cbHead >= wdc->getParams()->Heads)
-      {
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::imgXmodemErrHeads;
-        return false;
-      }
-      
-      cbHeadSpecified = true;
-      CHECK_STREAM_END;
+      doProgmemResponseStr = Progmem::imgXferErrHeads;
+      return false;
     }
     
     // sectors per track
-    if (!cbSptSpecified)
+    SD_READ(1);
+    BYTE spt = doBuffer[0];
+    if (!spt)
     {
-      cbSpt = data[packetIdx++];
-      cbSptSpecified = true;
-      CHECK_STREAM_END;
-    }
-    
-    // no sectors in track? advance
-    if (!cbSpt)
-    {
-      cbUnreadableTracks++;      
-      cbCylinderSpecified = false;
-      cbHeadSpecified = false;
-      cbSptSpecified = false;
-      cbLastPos = 0;
+      doUnreadableTracks++;
       continue;
     }
     
-    // write partial image: skip over data?
-    const bool partialImageSkipData = wdc->getParams()->PartialImage && 
-                                      ((cbCylinder < wdc->getParams()->PartialImageStartCyl) || (cbCylinder > wdc->getParams()->PartialImageEndCyl));
-    
-    // allocate sectors table and format
-    if (!cbSecMapSpecified)
+    // write partial image: skip over the sectors table and data?
+    static bool partialImageSkipData = false;
+    if (wdc->getParams()->PartialImage && 
+       ((currentCylinder < wdc->getParams()->PartialImageStartCyl) || (currentCylinder > wdc->getParams()->PartialImageEndCyl)))
     {
-      if (!cbSectorsTable)
+      // change "Processing cylinder X..." to "Busy..."
+      if (!partialImageSkipData)
       {
-        cbSectorsTable = new DWORD[cbSpt];
-        if (!cbSectorsTable)
-        {
-          cbSuccess = false;
-          cbProgmemResponseStr = Progmem::uiFeMemory;
-          return false;
-        }  
+        ui->print(Progmem::getString(Progmem::uiDeleteLine));
+        ui->print(Progmem::getString(Progmem::uiOperationPending));        
+        partialImageSkipData = true;
       }
+    }
+    else
+    {
+      partialImageSkipData = false;
+    }
+    
+    // read and interpret sectors table
+    SD_READ(spt*sizeof(DWORD));
+    doSectorsTable = new DWORD[spt];
+    if (!doSectorsTable)
+    {
+      ui->fatalError(Progmem::uiFeMemory);
+      return false;
+    }
+    memcpy(doSectorsTable, &doBuffer[0], spt*sizeof(DWORD));
+    
+    // skip over all data records?
+    if (partialImageSkipData)
+    {
+      for (BYTE sector = 0; sector < spt; sector++)
+      {
+        SD_READ(1);
+        const BYTE sectorDataType = doBuffer[0];
+        
+        if (!sectorDataType)
+        {
+          continue; // no data record follows
+        }
+        else if (sectorDataType & 0x80)
+        {
+          SD_READ(1); // 1 byte of compressed data
+        }
+        else
+        {
+          const BYTE sdh = (BYTE)(doSectorsTable[sector] >> 24);
+          SD_READ(wdc->getSectorSizeFromSDH(sdh)); // X bytes of raw data
+        }
+      }
+      
+      // go to next track
+      continue;
+    }
 
-      // address by bytes
-      BYTE* sectorsTable = (BYTE*)cbSectorsTable;
-      while (cbLastPos < (WORD)cbSpt*4) // 4 bytes per each sector
+    // progress indicator
+    if (firstRun || (currentCylinder != wdc->getPhysicalCylinder()))
+    {
+      firstRun = false;
+      ui->print(Progmem::getString(Progmem::scanProgress), currentCylinder);
+    }
+    
+    // since we need to format, and set gaps, make sure there are no variable size sectors,
+    // and that the logical cylinder and head numbers do not differ between each other.
+    // -> the Format Track command of the WD42C22 has no provision of customizing these between each,
+    // as the value is taken from a task register, for the whole track.
+    // ...otherwise we would have to call writeID to overwrite each sector ID and risk losing data,
+    // as this command requires a precise byte offset where to write the changes...   
+    const BYTE sdh = (BYTE)(doSectorsTable[0] >> 24); // data of the first sector in the table
+    const WORD logicalCylinder = (WORD)doSectorsTable[0];
+    const BYTE logicalHead = sdh & 0xF;        
+    const WORD secSizeBytes = wdc->getSectorSizeFromSDH(sdh);    
+    
+    // inspect the first logical sector and verify the rest
+    wdc->sramBeginBufferAccess(true, 0);
+    wdc->sramWriteByteSequential(0);
+    wdc->sramWriteByteSequential((BYTE)(doSectorsTable[0] >> 16));
+    
+    for (WORD idx = 1; idx < spt; idx++)
+    {
+      const BYTE thisSdh = (BYTE)(doSectorsTable[idx] >> 24);        
+      if (wdc->getSectorSizeFromSDH(thisSdh) != secSizeBytes)
       {
-        sectorsTable[cbLastPos++] = data[packetIdx++];
-        CHECK_STREAM_END;
-      }
-      
-      cbLastPos = 0;
-      cbSectorIdx = 0;
-      cbSecMapSpecified = true;
-      
-      const BYTE sdh = (BYTE)(cbSectorsTable[0] >> 24);
-      const WORD logicalCylinder = (WORD)cbSectorsTable[0];
-      const BYTE logicalHead = sdh & 0xF;        
-      cbSecSizeBytes = wdc->getSectorSizeFromSDH(sdh);
-      
-      // write partial image: skip over
-      if (partialImageSkipData)
-      {
-        continue;
-      }
-           
-      // since we need to format, and set gaps, make sure there are no variable size sectors,
-      // and that the logical cylinder and head numbers do not differ between each other.
-      // -> the Format Track command of the WD42C22 has no provision of customizing these between each,
-      // as the value is taken from a task register, for the whole track.
-      // ...otherwise we would have to call writeID to overwrite each sector ID and risk losing data,
-      // as this command requires a precise byte offset where to write the changes...      
-      
-      // inspect the first logical sector and verify the rest
-      wdc->sramBeginBufferAccess(true, 0);
-      wdc->sramWriteByteSequential(0);
-      wdc->sramWriteByteSequential((BYTE)(cbSectorsTable[0] >> 16));
-      
-      for (WORD idx = 1; idx < cbSpt; idx++)
-      {
-        const BYTE thisSdh = (BYTE)(cbSectorsTable[idx] >> 24);        
-        if (wdc->getSectorSizeFromSDH(thisSdh) != cbSecSizeBytes)
-        {
-          cbSuccess = false;
-          cbProgmemResponseStr = Progmem::imgXmodemErrVar1;
-          return false;
-        }
-        
-        const WORD thisCylinder = (WORD)cbSectorsTable[idx];
-        const BYTE thisHead = thisSdh & 0xF;
-        if ((thisHead != logicalHead) || (thisCylinder != logicalCylinder))
-        {
-          cbSuccess = false;
-          cbProgmemResponseStr = Progmem::imgXmodemErrVar2;
-          return false;
-        }
-        
-        // create format interleave table, set good sectors and later in the datastream, find out which ones are bad
-        wdc->sramWriteByteSequential(0);
-        wdc->sramWriteByteSequential((BYTE)(cbSectorsTable[idx] >> 16));
-      }
-      wdc->sramFinishBufferAccess();
-      
-      // prepare for writing, seek the drive
-      if (!wdc->seekDrive(cbCylinder, cbHead))
-      {
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::uiFeSeek;
+        doProgmemResponseStr = Progmem::imgXferErrVar1;
         return false;
       }
       
-      // format
-      wdc->formatTrack(cbSpt, cbSecSizeBytes, &logicalCylinder, &logicalHead);
+      const WORD thisCylinder = (WORD)doSectorsTable[idx];
+      const BYTE thisHead = thisSdh & 0xF;
+      if ((thisHead != logicalHead) || (thisCylinder != logicalCylinder))
+      {
+        doProgmemResponseStr = Progmem::imgXferErrVar2;
+        return false;
+      }
       
-      // formatTrack can only fail with WDC timeout, drive not ready or write fault
+      // create format interleave table, set good sectors and later in the datastream, find out which ones are bad
+      wdc->sramWriteByteSequential(0);
+      wdc->sramWriteByteSequential((BYTE)(doSectorsTable[idx] >> 16));
+    }
+    wdc->sramFinishBufferAccess();
+    
+    // prepare for writing, seek the drive and format
+    wdc->seekDrive(currentCylinder, currentHead);
+    wdc->formatTrack(spt, secSizeBytes, &logicalCylinder, &logicalHead);
+    
+    // formatTrack can only fail with WDC timeout, drive not ready or write fault
+    if (wdc->getLastError())
+    {
+      doProgmemResponseStr = wdc->getLastErrorMessage();
+      return false;
+    }      
+    
+    // determine whether to write the whole track at once, or go sector by sector:
+    // write whole track if there were no bad or unreadable sectors, based on sectorDataType
+    bool writeSectorBySector = false;
+    const DWORD dataRecords = doImageFile.curPosition(); // at the start of data records
+
+    if ((DWORD)secSizeBytes*spt > 32768) // I could only fit around 10K per track onto an MFM drive regardless
+    {
+      writeSectorBySector = true;
+    }
+    else
+    {
+      for (BYTE sector = 0; sector < spt; sector++)
+      {
+        SD_READ(1);
+        BYTE sectorDataType = doBuffer[0];      
+        if (!sectorDataType || ((sectorDataType & 0x7F) > 1))
+        {
+          writeSectorBySector = true;
+          break;
+        }
+        SD_READ(sectorDataType & 0x80 ? 1 : secSizeBytes);
+      }  
+    }        
+    
+    if (!writeSectorBySector)
+    {
+      // prepare whole track buffer
+      doProgmemResponseStr = Progmem::uiEmpty;
+      doImageFile.seekSet(dataRecords);
+      wdc->sramBeginBufferAccess(true, 0);
+      
+      for (BYTE sectorIdx = 0; sectorIdx < spt; sectorIdx++)
+      {
+        // logical sector number, then data
+        wdc->sramWriteByteSequential((BYTE)(doSectorsTable[sectorIdx] >> 16));
+        
+        SD_READ(1);
+        const BYTE sectorDataType = doBuffer[0];
+        
+        if (sectorDataType & 0x80)
+        {
+          SD_READ(1); // compressed data
+          for (WORD count = 0; count < secSizeBytes; count++)
+          {
+            wdc->sramWriteByteSequential(doBuffer[0]);
+          }
+        }
+        
+        else // normal data
+        {
+          SD_READ(secSizeBytes);
+          for (WORD idx = 0; idx < secSizeBytes; idx++)
+          {
+            wdc->sramWriteByteSequential(doBuffer[idx]);
+          }
+        }
+      }
+      
+      wdc->sramFinishBufferAccess();
+      wdc->writeTrack(spt, secSizeBytes, &logicalCylinder, &logicalHead);
+      
       if (wdc->getLastError())
       {
-        cbSuccess = false;
-        cbProgmemResponseStr = wdc->getLastErrorMessage();
-        return;
-      }      
-    }
-    
-    // determine what to write
-    if (!cbSecDataTypeSpecified)
-    {
-      cbSectorDataType = data[packetIdx++];
-      if ((cbSectorDataType & 0x7F) > 2)
+        if (wdc->getLastError() < 4) // WDC timeout, drive not ready, writefault
+        {
+          doProgmemResponseStr = wdc->getLastErrorMessage();
+          return false;
+        }
+      }
+      else
       {
-        cbSuccess = false;
-        cbProgmemResponseStr = Progmem::imgXmodemErrSecTyp;
+        // go to next track
+        continue;
+      }
+    }
+
+    // fall back to single sector write
+    doProgmemResponseStr = Progmem::uiEmpty;
+    doImageFile.seekSet(dataRecords);    
+        
+    BYTE sectorIdx = 0;
+    while (sectorIdx < spt)
+    {     
+      // determine what to write - sector data type; check validity
+      SD_READ(1);
+      BYTE sectorDataType = doBuffer[0];
+      if ((sectorDataType & 0x7F) > 2)
+      {
+        doProgmemResponseStr = Progmem::imgXferErrSecTyp;
         return false;
       }
       
-      cbSecDataTypeSpecified = true;
-      CHECK_STREAM_END;
-    }
-    
-    // so far so good
-    cbSuccess = true;
-    cbProgmemResponseStr = 0;
-    
-    // write, depending on type
-    if (!partialImageSkipData && (cbSectorIdx < cbSpt))
-    {     
-      const BYTE sdh = (BYTE)(cbSectorsTable[cbSectorIdx] >> 24);
-      const WORD logicalCylinder = (WORD)cbSectorsTable[cbSectorIdx];
+      const BYTE sdh = (BYTE)(doSectorsTable[sectorIdx] >> 24);
+      const WORD logicalCylinder = (WORD)doSectorsTable[sectorIdx];
       const BYTE logicalHead = sdh & 0xF;
-      const BYTE logicalSector = (BYTE)(cbSectorsTable[cbSectorIdx] >> 16);
+      const BYTE logicalSector = (BYTE)(doSectorsTable[sectorIdx] >> 16);
       
       // unreadable sector
-      if (cbSectorDataType == 0)
+      if (sectorDataType == 0)
       {
         // already formatted empty...
-        if (cbWriteImgBadSectorMode == 1) // also flag as bad?
+        if (doWriteImgBadSectorMode == 1) // also flag as bad?
         {
           wdc->setBadSector(logicalSector, &logicalCylinder, &logicalHead);
         }
         
         // continue with the next
-        cbTotalBadBlocks++;
-        cbSectorIdx++;
-        if (cbSectorIdx < cbSpt)
-        {
-          cbSecDataTypeSpecified = false;
-          continue;
-        }
+        doTotalBadBlocks++;
+        sectorIdx++;
       }
       
       // data follows
@@ -1378,13 +1198,13 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
         bool formatBad = false;  
         
         // contains CRC/ECC error?
-        if ((cbSectorDataType & 0x7F) == 2)
+        if ((sectorDataType & 0x7F) == 2)
         { 
-          if (cbWriteImgDataErrorsMode == 0)
+          if (doWriteImgDataErrorsMode == 0)
           {
             doNotWrite = true; // just keep formatted empty
           }
-          else if (cbWriteImgDataErrorsMode == 1)
+          else if (doWriteImgDataErrorsMode == 1)
           {
             doNotWrite = true;
             formatBad = true; // do not write and set sector ID as bad
@@ -1392,16 +1212,16 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
         }
         
         // initialize SRAM buffer write
-        if ((cbLastPos == 0) && !doNotWrite && !formatBad)
+        if (!doNotWrite && !formatBad)
         {
           wdc->sramBeginBufferAccess(true, 0);
         }
         
         // all data are of the same byte - compressed
-        if (cbSectorDataType & 0x80)
+        if (sectorDataType & 0x80)
         {
-          BYTE compressed = data[packetIdx++];
-          cbLastPos++;
+          SD_READ(1)
+          BYTE compressed = doBuffer[0];
           
           // since we format every track, before writing a sector,
           // and the WD42C22 initializes every sector to 0xFF during formatting,
@@ -1414,7 +1234,7 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
           
           if (!doNotWrite)
           {
-            for (WORD index = 0; index < cbSecSizeBytes; index++)
+            for (WORD index = 0; index < secSizeBytes; index++)
             {
               wdc->sramWriteByteSequential(compressed);
             }            
@@ -1426,30 +1246,27 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
         // normal data
         else
         {
-          while (cbLastPos != cbSecSizeBytes)
+          SD_READ(secSizeBytes);
+          if (!doNotWrite)
           {
-            BYTE byte = data[packetIdx++];
-            if (!doNotWrite)
+            for (WORD idx = 0; idx < secSizeBytes; idx++)
             {
-              wdc->sramWriteByteSequential(byte);
-            }
-            
-            cbLastPos++;            
-            CHECK_STREAM_END;
+              wdc->sramWriteByteSequential(doBuffer[idx]);
+            }  
           }
+          
           wdc->sramFinishBufferAccess();
         }
           
         if (!doNotWrite)  
         {
           // write
-          wdc->writeSector(logicalSector, cbSecSizeBytes, &logicalCylinder, &logicalHead);     
+          wdc->writeSector(logicalSector, secSizeBytes, &logicalCylinder, &logicalHead);     
           if (wdc->getLastError())
           {
             if (wdc->getLastError() < 4) // WDC timeout, drive not ready, writefault
             {
-              cbSuccess = false;
-              cbProgmemResponseStr = wdc->getLastErrorMessage();
+              doProgmemResponseStr = wdc->getLastErrorMessage();
               return false;
             }
           }
@@ -1462,93 +1279,28 @@ bool CbWriteDisk(DWORD packetNo, BYTE* data, WORD size)
         }
         
         // count errors
-        // we can't increment this at the doNotWrite setter above;
-        // as multiple reentrancies due to CHECK_STREAM_END would cause false counts
-        if ((cbSectorDataType & 0x7F) == 2)
+        if ((sectorDataType & 0x7F) == 2)
         {
-          cbTotalDataErrors++;
+          doTotalDataErrors++;
         }
           
-        // next sector 
-        cbLastPos = 0;        
-        cbSectorIdx++;
-        if (cbSectorIdx < cbSpt)
-        {
-          cbSecDataTypeSpecified = false;
-        }
-        
-        CHECK_STREAM_END;
-        continue;          
+        // next sector      
+        sectorIdx++;        
       }      
     }
-    
-    else if (partialImageSkipData) // just skip over data packet
-    {
-      if (cbSectorIdx < cbSpt)
-      {
-        if (cbSectorDataType == 0) // no data would follow
-        {
-          cbSectorIdx++;
-          if (cbSectorIdx < cbSpt)
-          {
-            cbSecDataTypeSpecified = false;
-            continue;
-          }
-        }
-        
-        else
-        {
-          if (cbSectorDataType & 0x80) // 1 byte follows
-          {
-            packetIdx++;
-            cbLastPos++;
-          }
-          else // sector data follows
-          {
-            while (cbLastPos != cbSecSizeBytes)
-            {
-              packetIdx++;              
-              cbLastPos++;            
-              CHECK_STREAM_END;
-            }
-          }
-          
-          // next sector 
-          cbLastPos = 0;        
-          cbSectorIdx++;
-          if (cbSectorIdx < cbSpt)
-          {
-            cbSecDataTypeSpecified = false;
-          }
-          
-          CHECK_STREAM_END;
-          continue;
-        }
-      }
-    }
-    
-    // specify next track data field
-    cbSectorIdx = 0;
-    cbLastPos = 0;
-    cbCylinderSpecified = false;
-    cbHeadSpecified = false;
-    cbSptSpecified = false;
-    cbSecMapSpecified = false;
-    cbSecDataTypeSpecified = false;
   }
   
-  // doesn't reach here
-  return false;
+  // infinite loop
 }
 
-bool CbVerifyParamsFromImage()
+bool DoVerifyParamsFromImage()
 { 
   // assume error
-  BYTE backup = cbProgmemResponseStr;
-  cbProgmemResponseStr = Progmem::imgXmodemErrParams;
+  BYTE backup = doProgmemResponseStr;
+  doProgmemResponseStr = Progmem::imgXferErrParams;
   
   // access loaded array as disk drive parameters POD
-  WD42C22::DiskDriveParams* params = (WD42C22::DiskDriveParams*)(&cbParams[0]);
+  WD42C22::DiskDriveParams* params = (WD42C22::DiskDriveParams*)(&doParams[0]);
   
   if (params->DataVerifyMode > MODE_ECC_56BIT)
   {
@@ -1574,16 +1326,16 @@ bool CbVerifyParamsFromImage()
   }
   
   // check if MFM-RLL mismatch (and we're not set to override parameters)
-  if (!cbWriteImgOverrideParams && (params->UseRLL != wdc->getParams()->UseRLL))
+  if (!doWriteImgOverrideParams && (params->UseRLL != wdc->getParams()->UseRLL))
   {
-    cbProgmemResponseStr = Progmem::imgXmodemErrMFMRLL; // inform about mismatch
+    doProgmemResponseStr = Progmem::imgXferErrMFMRLL; // inform about mismatch
     return false;
   }
   
   // check partial image bounds
   if (wdc->getParams()->PartialImage)
   {
-    cbProgmemResponseStr = Progmem::imgXmodemErrPart;
+    doProgmemResponseStr = Progmem::imgXferErrPart;
     
     // sanity check
     if ((wdc->getParams()->PartialImageStartCyl > wdc->getParams()->PartialImageEndCyl) ||
@@ -1600,6 +1352,224 @@ bool CbVerifyParamsFromImage()
     }
   }
   
-  cbProgmemResponseStr = backup; // alles in Ordnung
+  doProgmemResponseStr = backup; // alles in Ordnung
   return true;
+}
+
+bool DoDetectMemoryCard()
+{ 
+  sd.end();
+  
+  static SdSpiConfig cfg(53, USER_SPI_BEGIN); //53: SCS 
+  if (!sd.cardBegin(cfg))
+  {
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    ui->print(Progmem::getString(Progmem::imgXferCardMissing));
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    return false;
+  }
+  
+  if (!sd.card()->sectorCount() || !sd.volumeBegin())
+  {
+    sd.end();
+    
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    ui->print(Progmem::getString(Progmem::imgXferCardError));
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    return false;
+  }
+  
+  return true;  
+}
+
+bool DoPickFile(bool writingImage)
+{
+  const char wdiExt[] = ".wdi";
+  
+  if (!DoDetectMemoryCard())
+  {
+    return false;
+  }
+  
+  // try to mount root directory
+  strcpy(path, "/");
+  File rootdir = sd.open(path, O_RDONLY);
+  if (!rootdir)
+  {
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    ui->print(Progmem::getString(Progmem::imgXferCardError));
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    return false;
+  }
+  
+  ui->print(Progmem::getString(Progmem::imgDirListing));
+  
+  bool noFiles = true;
+  while(true)
+  {
+    File file = rootdir.openNextFile(O_RDONLY);
+    if (!file)
+    {
+      break;
+    }
+
+    if (file.isHidden())
+    {
+      file.close();
+      continue;
+    }
+    
+    // filter directories and *.wdi
+    addPath[0] = 0;
+    file.getName(addPath, MAX_PATH);  
+    const bool isDirectory = file.isDir() || file.isSubDir();
+    file.close();
+    if (!strlen(addPath))
+    {
+      continue;
+    }    
+    if (!isDirectory)
+    {
+      const BYTE* ext = strcasestr(addPath, wdiExt);
+      if (!ext)
+      {
+        continue;
+      }
+      
+      // also ending with it?
+      const BYTE extPos = ext-&addPath[0];
+      if (extPos != strlen(addPath)-4)
+      {
+        continue;
+      }
+    }
+    
+    // do directory listing
+    noFiles = false;
+    ui->print(isDirectory ? "<DIR> " : "      ");
+    ui->print("%s", addPath);
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+  }
+  rootdir.close();
+  
+  if (noFiles)
+  {
+    ui->print(Progmem::getString(Progmem::dosDirectoryEmpty));
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    
+    if (!writingImage)
+    {
+      ui->print(Progmem::getString(Progmem::uiContinue));
+      ui->readKey("\r");  
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return false;  
+    }    
+  }
+  
+  while(true)
+  {
+    strcpy(path, "/");
+    ui->print(Progmem::getString(writingImage ? Progmem::imgDirPickWrite : Progmem::imgDirPickRead));
+    const BYTE* promptBuffer = ui->prompt(MAX_PATH-1, NULL, true); // -1 to account for initial '/' in path buffer
+    if (!promptBuffer) // cancelled
+    {
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return false;
+    }
+    else if (strlen(promptBuffer) == 0)
+    {
+      continue;
+    }
+    
+    WORD idx = 0;
+    bool emptyString = true;
+    while (idx < strlen(promptBuffer))
+    {
+      if (!isspace(promptBuffer[idx++]))
+      {
+        emptyString = false;
+        break;
+      }
+    }
+    if (emptyString)
+    {
+      continue;
+    }    
+    ui->print(Progmem::getString(Progmem::uiNewLine));
+    
+    // append .wdi extension, if not specified
+    bool appendExt = false;
+    strcat(path, promptBuffer);  
+    const BYTE* ext = strcasestr(path, wdiExt);
+    if (!ext)
+    {
+      appendExt = true;
+    }
+    else
+    {
+      const BYTE extPos = ext-&path[0];
+      if (extPos != strlen(path)-4)
+      {
+        appendExt = true;
+      }
+    }  
+    if (appendExt)
+    {
+      if (strlen(path) > MAX_PATH-4)
+      {
+        path[MAX_PATH-4] = 0; // make space :)
+      }
+      strcat(path, wdiExt);
+    }
+    
+    // check if file exists; if writing, ask to overwrite
+    if (!DoDetectMemoryCard())
+    {
+      return false;
+    }
+    
+    File testOpen = sd.open(path, O_RDONLY);
+    bool fileExists = false;
+    if (testOpen)
+    {
+      fileExists = true;
+      testOpen.close();
+    }
+    if (!writingImage && !fileExists)
+    {
+      ui->print(Progmem::getString(Progmem::imgDirInvalid));
+      continue;
+    }
+    else if (writingImage && fileExists)
+    {
+      ui->print(Progmem::getString(Progmem::imgDirOverwrite));
+      BYTE key = toupper(ui->readKey("YN\e"));
+      if (key == '\e')
+      {
+        ui->print(Progmem::getString(Progmem::uiNewLine));
+        return false;
+      }
+      
+      ui->print(Progmem::getString(Progmem::uiEchoKey), key);
+      if (key == 'N')
+      {
+        continue;
+      }
+    }
+    
+    // open the file for read or write
+    doImageFile = sd.open(path, writingImage ? O_WRITE | O_CREAT | O_TRUNC : O_RDONLY);
+    if (!doImageFile)
+    {
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      ui->print(Progmem::getString(Progmem::imgXferFileError));
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      ui->print(Progmem::getString(Progmem::uiContinue));
+      ui->readKey("\r");  
+      ui->print(Progmem::getString(Progmem::uiNewLine));
+      return false;
+    }
+
+    return true;
+  }
 }

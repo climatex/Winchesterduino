@@ -241,38 +241,40 @@ void WD42C22::sramClearBuffer(WORD count)
   sramFinishBufferAccess();
 }
 
-bool WD42C22::testBoard()
+bool WD42C22::testBoard(bool& wrongBoardVersion)
 {
-  // a simple test of both the WDC chip and its associated 2K buffer SRAM (6116)
-  const WORD sizeToTest = 2048;
-  BYTE* testArray = new BYTE[sizeToTest];
-  if (!testArray)
-  {
-    ui->fatalError(Progmem::uiFeMemory);
-  }
+  // a simple test of both the WDC chip and its associated 32K buffer SRAM (62256) 
+  // write 32K bytes into the SRAM of value: current offset MSB (0 to 127)
+  WORD offset = 0;
+  sramBeginBufferAccess(true, offset);
   
-  // write 2K of random values to our test array and to the buffer starting at offset 0
-  sramBeginBufferAccess(true, 0);
-  for (WORD index = 0; index < sizeToTest; index++)
+  while (offset < 32*1024)
   {
-    testArray[index] = (BYTE)random(0, 256);
-    sramWriteByteSequential(testArray[index]);
+    sramWriteByteSequential(offset >> 8);
+    offset++;
   }
   
   // now setup WDC to read from its buffer
-  sramBeginBufferAccess(false, 0);    
-  for (WORD index = 0; index < sizeToTest; index++)
+  offset = 0;
+  sramBeginBufferAccess(false, offset);
+  
+  while (offset < 32*1024)
   {
-    // mismatch?
-    if (testArray[index] != sramReadByteSequential())
+    const BYTE test = sramReadByteSequential();
+    if (test != (offset >> 8))
     {
-      delete[] testArray;
+     // offset 0 contains a value of 30K: 2KB SRAM installed 
+      if (!offset && (test == 120))
+      {
+        wrongBoardVersion = true; // v1.1 branch used on v1.0 board
+      }
+      
       return false; // WDC not present, not working properly or SRAM error
     }
+    offset++;
   }
   
   sramClearBuffer(); // and also finish access to SRAM - important
-  delete[] testArray; 
   return true;
 }
 
@@ -835,12 +837,12 @@ void WD42C22::readSector(BYTE sectorNo, WORD sectorSizeBytes, bool longMode, WOR
   }
 }
 
-void WD42C22::verifyTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, BYTE startSector, WORD* overrideCyl, BYTE* overrideHead)
+void WD42C22::readTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, BYTE startSector, WORD* overrideCyl, BYTE* overrideHead)
 {
-  // as above, but reads up to sectorsPerTrack of constant sectorSizeBytes
-  // the SRAM buffer is too small for whole track reads, and its contents are trashed
-  // used for quick verify during mainmenu format:
-  // if this fails, fall back to individual readSector to determine offending sectors
+  // readSector with M=1 in the command code for multi-sector operation
+  // sectors are read into the SRAM buffer with 1:1 interleave
+  // this function fails if bad sectors are present, or also non-standard tracks (gaps in sector numberings, different logical cyl/head numbers)
+  // in that case, need to fall back to individual readSector() calls
   
   BYTE bcr = adRead(0x37);
   BYTE icr = adRead(0x3B);
@@ -872,7 +874,7 @@ void WD42C22::verifyTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, BYTE start
   
   // prepare task file registers  
   adWrite(0x22, sectorsPerTrack);         // sector count
-  adWrite(0x23, startSector);             // starting sector number (default 1)
+  adWrite(0x23, startSector);             // starting sector number
   adWrite(0x24, (BYTE)currentCyl);        // LSB
   adWrite(0x25, (BYTE)(currentCyl >> 8)); // MSB
   
@@ -1541,4 +1543,76 @@ void WD42C22::setBadSector(BYTE sectorNo, WORD* overrideCyl, BYTE* overrideHead)
     processResult();
   }
   
+}
+
+void WD42C22::writeTrack(BYTE sectorsPerTrack, WORD sectorSizeBytes, WORD* overrideCyl, BYTE* overrideHead)
+{
+  // writeSector with M=1 (multisector) and X=1 (sector numbers directly precede sector data in SRAM)
+  // the whole track data buffer (with the sector numbers in it) must be prepared beforehand
+  // sector sizes and cyl/head numbers in ID fields must be consistent for this to work
+  // also, no bad block marks - otherwise, writeSector() one by one
+  
+  // dataPloLength: byte padding of the data field; default 12 bytes + dataPloLength
+  const BYTE dataPloLength = 0;
+   
+  BYTE bcr = adRead(0x37);
+  BYTE icr = adRead(0x3B);
+  
+  icr &= 0xF7;
+  adWrite(0x3B, icr);      // make sure MAC = 0 before changing DRWB    
+  bcr |= 4;                // DRWB = 1
+  adWrite(0x37, bcr);
+  adWrite(0x34, 0);        // starting address of data in buffer
+  adWrite(0x35, 0);
+  adWrite(0x3F, 0x40);     // ECCM = 0, DDRQ = 1
+  icr |= 8;
+  adWrite(0x3B, icr);      // MAC = 1  
+  bcr |= 1;
+  adWrite(0x37, bcr);      // ADBP = 1  
+  icr &= 0xF7;
+  adWrite(0x3B, icr);      // MAC = 0
+  
+  WORD currentCyl = m_physicalCylinder;
+  BYTE currentHead = m_physicalHead;
+  if (overrideCyl)
+  {
+    currentCyl = *overrideCyl;
+  }
+  if (overrideHead)
+  {
+    currentHead = *overrideHead;
+  }
+  
+  // prepare task file registers  
+  adWrite(0x21, dataPloLength);           // PLO length
+  adWrite(0x22, sectorsPerTrack);         // sector count
+  adWrite(0x24, (BYTE)currentCyl);        // LSB
+  adWrite(0x25, (BYTE)(currentCyl >> 8)); // MSB
+  
+  // prepare SDH register
+  BYTE sdh = getSDHFromSectorSize(sectorSizeBytes);
+
+  // ECC = 1 into SDH  
+  if (m_params.DataVerifyMode != MODE_CRC_16BIT)
+  {
+    sdh |= 0x80;
+  }
+  sdh |= currentHead; // low 3 or 4 bits
+  adWrite(0x26, sdh);
+
+  m_result = WDC_OK;
+  DWORD wait = TIMEOUT_IO;
+  mcintFired = false;
+  adWrite(0x27, 0x3C); // write multisector
+  
+  while (!mcintFired)
+  {
+    if (!--wait)
+    {
+      m_result = WDC_TIMEOUT;
+      break;
+    }
+  }
+  
+  processResult();
 }

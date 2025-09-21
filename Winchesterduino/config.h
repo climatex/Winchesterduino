@@ -33,7 +33,7 @@
 #include <avr/sfr_defs.h>
 #include <string.h>
 #include <EEPROM.h>
-#include "src/XModem/XModem.h"
+#include <SdFat.h>                       // please install the SdFat library to build Winchesterduino v1.1
 #include "src/FatFs/ff.h"
 
 // our common includes
@@ -48,3 +48,4 @@
 // public globals
 extern Ui*      ui;
 extern WD42C22* wdc;
+extern SdFat    sd;

@@ -58,11 +58,11 @@ public:
   BYTE sramReadByteSequential();
   void sramWriteByteSequential(BYTE);
   void sramFinishBufferAccess();
-  void sramClearBuffer(WORD count = 2048);
+  void sramClearBuffer(WORD count = 32768);
   
   DiskDriveParams* getParams() { return &m_params; }
   
-  bool testBoard();
+  bool testBoard(bool& wrongBoardVersion);
   void selectDrive(bool ds0 = true);
   bool isDriveReady();
   bool isWriteFault();
@@ -83,12 +83,13 @@ public:
   
   void scanID(WORD&, BYTE&, BYTE&);
   void readSector(BYTE, WORD, bool longMode = false, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
-  void verifyTrack(BYTE, WORD, BYTE startSector = 1, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
+  void readTrack(BYTE, WORD, BYTE, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   DWORD* fillSectorsTable(WORD&);
   bool prepareFormatInterleave(BYTE, BYTE, BYTE startSector = 1, BYTE* badBlocksTable = NULL);
   void formatTrack(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   void writeSector(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   void setBadSector(BYTE, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
+  void writeTrack(BYTE, WORD, WORD* overrideCyl = NULL, BYTE* overrideHead = NULL);
   
 private:  
   WD42C22();

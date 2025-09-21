@@ -33,7 +33,8 @@ void InitializeDisk()
    
   // test WDC 
   ui->print(Progmem::getString(Progmem::uiTestingWDC));
-  minimalMode = !wdc->testBoard();
+  bool wrongBoardVer = false;
+  minimalMode = !wdc->testBoard(wrongBoardVer);
   ui->print(" ");
   ui->print(Progmem::getString(minimalMode ? Progmem::uiFAIL : Progmem::uiOK));
   ui->print(Progmem::getString(Progmem::uiNewLine));
@@ -55,6 +56,13 @@ void InitializeDisk()
   
   // we can continue, setup and apply new parameters
   wdc->selectDrive(false); // not needed now
+  
+  // v1.1 branch used on v1.0 main board
+  if (minimalMode && wrongBoardVer)
+  {
+    ui->print(Progmem::getString(Progmem::uiWrongBoardVer));
+  }
+  
   SetupParameters();
   if (!minimalMode)
   {
@@ -1164,7 +1172,7 @@ void CommandFormat()
       {
         badBlocksCount = 0;
 
-        wdc->verifyTrack(sectorsPerTrack, sectorSizeBytes, startSector);
+        wdc->readTrack(sectorsPerTrack, sectorSizeBytes, startSector);
         if (wdc->getLastError())
         {
           // WDC timeout, drive not ready, writefault - abort the command
@@ -1367,7 +1375,22 @@ void CommandScan()
       WORD trySectorSize = wdc->getSectorSizeFromSDH(sdh);
             
       // try whole track with uniform sector size
-      wdc->verifyTrack(sectorsPerTrack, trySectorSize);      
+      BYTE startingSector = (BYTE)-1;
+      for (WORD idx = 0; idx < tableCount; idx++)
+      {
+        const DWORD& sectorData = sectorsTable[idx];
+        if (sectorData == 0xFFFFFFFFUL) // undefined
+        {
+          continue;
+        }
+        
+        const BYTE sector = (BYTE)(sectorData >> 16);
+        if (sector < startingSector)
+        {
+          startingSector = sector;
+        }
+      }
+      wdc->readTrack(sectorsPerTrack, trySectorSize, startingSector);      
       
       if (wdc->getLastError())
       {

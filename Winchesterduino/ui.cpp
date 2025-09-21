@@ -197,17 +197,14 @@ const BYTE* Ui::prompt(BYTE maximumPromptLen, const BYTE* allowedKeys, bool escR
   return (const BYTE*)&m_promptBuffer;
 }
 
-// print an error that doesn't continue (in a XMODEM callback, this function does nothing)
+// print an error that doesn't continue
 void Ui::fatalError(BYTE progmemStrIndex)
 {
   wdc->selectDrive(false); // turn the LED off
   
-  if (!IsSerialTransfer())
-  {
-    print(Progmem::getString(Progmem::uiFatalError));
-    print(Progmem::getString(progmemStrIndex));
-    print(Progmem::getString(Progmem::uiSystemHalted));
-    
-    for (;;) {}
-  }  
+  print(Progmem::getString(Progmem::uiFatalError));
+  print(Progmem::getString(progmemStrIndex));
+  print(Progmem::getString(Progmem::uiSystemHalted));
+  
+  for (;;) {}
 }

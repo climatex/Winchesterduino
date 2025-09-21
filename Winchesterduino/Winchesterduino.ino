@@ -9,6 +9,9 @@ Ui* ui = NULL;
 // Winchester disk controller
 WD42C22* wdc = NULL;
 
+// SD
+SdFat sd;
+
 void setup()
 { 
   ui = Ui::get();

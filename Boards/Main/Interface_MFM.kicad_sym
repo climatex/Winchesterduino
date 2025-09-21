@@ -86,7 +86,7 @@
 		(symbol "WD42C22A_1_1"
 			(rectangle
 				(start -19.05 81.28)
-				(end 20.32 -85.09)
+				(end 20.32 -88.9)
 				(stroke
 					(width 0)
 					(type default)
@@ -798,7 +798,7 @@
 				)
 			)
 			(pin power_in line
-				(at -3.81 -88.9 90)
+				(at -3.81 -92.71 90)
 				(length 3.81)
 				(name "Vss"
 					(effects
@@ -834,7 +834,7 @@
 				)
 			)
 			(pin power_in line
-				(at 0 -88.9 90)
+				(at 0 -92.71 90)
 				(length 3.81)
 				(name "Vss"
 					(effects
@@ -852,7 +852,7 @@
 				)
 			)
 			(pin power_in line
-				(at 3.81 -88.9 90)
+				(at 3.81 -92.71 90)
 				(length 3.81)
 				(name "Vss"
 					(effects
@@ -1356,7 +1356,7 @@
 				)
 			)
 			(pin output line
-				(at 24.13 -29.21 180)
+				(at 24.13 -33.02 180)
 				(length 3.81)
 				(name "WDATA"
 					(effects
@@ -1374,7 +1374,7 @@
 				)
 			)
 			(pin output line
-				(at 24.13 -33.02 180)
+				(at 24.13 -36.83 180)
 				(length 3.81)
 				(name "~{LATE}"
 					(effects
@@ -1392,7 +1392,7 @@
 				)
 			)
 			(pin output line
-				(at 24.13 -36.83 180)
+				(at 24.13 -40.64 180)
 				(length 3.81)
 				(name "~{EARLY}"
 					(effects
@@ -1410,7 +1410,7 @@
 				)
 			)
 			(pin output line
-				(at 24.13 -40.64 180)
+				(at 24.13 -44.45 180)
 				(length 3.81)
 				(name "WGATE"
 					(effects
@@ -1428,7 +1428,7 @@
 				)
 			)
 			(pin input line
-				(at 24.13 -44.45 180)
+				(at 24.13 -48.26 180)
 				(length 3.81)
 				(name "WCLOCK"
 					(effects
@@ -1446,7 +1446,7 @@
 				)
 			)
 			(pin input line
-				(at 24.13 -48.26 180)
+				(at 24.13 -52.07 180)
 				(length 3.81)
 				(name "~{INDEX}"
 					(effects
@@ -1464,7 +1464,7 @@
 				)
 			)
 			(pin input line
-				(at 24.13 -52.07 180)
+				(at 24.13 -55.88 180)
 				(length 3.81)
 				(name "DATARUN"
 					(effects
@@ -1482,7 +1482,7 @@
 				)
 			)
 			(pin input line
-				(at 24.13 -55.88 180)
+				(at 24.13 -59.69 180)
 				(length 3.81)
 				(name "RDATA"
 					(effects
@@ -1500,7 +1500,7 @@
 				)
 			)
 			(pin output line
-				(at 24.13 -59.69 180)
+				(at 24.13 -63.5 180)
 				(length 3.81)
 				(name "RGATE"
 					(effects
@@ -1518,7 +1518,7 @@
 				)
 			)
 			(pin input line
-				(at 24.13 -63.5 180)
+				(at 24.13 -67.31 180)
 				(length 3.81)
 				(name "RCLOCK"
 					(effects
@@ -1536,7 +1536,7 @@
 				)
 			)
 			(pin input line
-				(at 24.13 -67.31 180)
+				(at 24.13 -71.12 180)
 				(length 3.81)
 				(name "~{WFAULT}"
 					(effects
@@ -1554,7 +1554,7 @@
 				)
 			)
 			(pin input line
-				(at 24.13 -71.12 180)
+				(at 24.13 -74.93 180)
 				(length 3.81)
 				(name "~{READY}"
 					(effects
@@ -1572,7 +1572,7 @@
 				)
 			)
 			(pin output line
-				(at 24.13 -74.93 180)
+				(at 24.13 -78.74 180)
 				(length 3.81)
 				(name "~{DS0}"
 					(effects
@@ -1590,7 +1590,7 @@
 				)
 			)
 			(pin output line
-				(at 24.13 -78.74 180)
+				(at 24.13 -82.55 180)
 				(length 3.81)
 				(name "~{DS1}"
 					(effects

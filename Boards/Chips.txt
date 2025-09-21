@@ -1,7 +1,7 @@
 Main board (1 variant):
 U1, U2 - 7438     in DIP-14
 U3     - WD42C22  in PLCC-84 through a THT socket
-U4     - 6116     in DIP-24
+U4     - 62256    in DIP-28
 
 Separator board (2 variants):
 U1, U2 - 75176    in DIP-8

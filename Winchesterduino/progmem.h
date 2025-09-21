@@ -69,6 +69,7 @@ public:
     uiTestingWDC,
     uiWaitingReady,
     uiSeekingToCyl0,
+    uiWrongBoardVer,
     uiMinimalMode1,
     uiMinimalMode2,
     uiMinimalMode3,
@@ -180,23 +181,26 @@ public:
     // image file transfer
     imgReadWholeDisk,
     imgWriteWholeDisk,
-    imgXmodem1k,
-    imgXmodemPrefix,
-    imgXmodem1kPrefix,
-    imgXmodemWaitSend, 
-    imgXmodemWaitRecv,
-    imgXmodemXferEnd,
-    imgXmodemXferFail,
-    imgXmodemErrPacket,
-    imgXmodemErrHeader,
-    imgXmodemErrParams,
-    imgXmodemErrSecTyp,
-    imgXmodemErrMFMRLL,
-    imgXmodemErrCyls,
-    imgXmodemErrHeads,
-    imgXmodemErrVar1,
-    imgXmodemErrVar2,
-    imgXmodemErrPart,
+    imgDirListing,    
+    imgDirPickRead,
+    imgDirPickWrite,
+    imgDirInvalid,
+    imgDirOverwrite,
+    imgXferEnd,
+    imgXferFail,
+    imgXferCardMissing,
+    imgXferCardError,
+    imgXferFileError,
+    imgXferErrHeader,
+    imgXferErrParams,
+    imgXferErrEnd,
+    imgXferErrSecTyp,
+    imgXferErrMFMRLL,
+    imgXferErrCyls,
+    imgXferErrHeads,
+    imgXferErrVar1,
+    imgXferErrVar2,
+    imgXferErrPart,
     imgWriteHeader,
     imgWriteComment,
     imgWriteDone,
@@ -306,10 +310,11 @@ private:
   
 // startup and setup related
   PROGMEM_STR m_uiSplash[]           PROGMEM = "Winchesterduino (c) 2025 J. Bogin\r\nBuild: ";
-  PROGMEM_STR m_uiBuild[]            PROGMEM = "30th Aug 2025";
-  PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";
+  PROGMEM_STR m_uiBuild[]            PROGMEM = "21st Sep 2025 (Main board v1.1)";
+  PROGMEM_STR m_uiTestingWDC[]       PROGMEM = "Testing WD42C22 and its buffer RAM...";  
   PROGMEM_STR m_uiWaitingReady[]     PROGMEM = "Waiting until drive becomes /READY...";
   PROGMEM_STR m_uiSeekingToCyl0[]    PROGMEM = "Determining position of cylinder 0...";
+  PROGMEM_STR m_uiWrongBoardVer[]    PROGMEM = "\r\nUse the v1.0 code branch for a v1.0 main board.\r\n";
   PROGMEM_STR m_uiMinimalMode1[]     PROGMEM = "WDC disk controller not present, or not working properly.\r\n";
   PROGMEM_STR m_uiMinimalMode2[]     PROGMEM = "Running in minimal mode. Only basic seeking is supported.\r\n";
   PROGMEM_STR m_uiMinimalMode3[]     PROGMEM = "Use a logic analyzer on the 'raw TTL read data' connector.\r\n";
@@ -419,27 +424,30 @@ private:
   PROGMEM_STR m_parkRecalibrating[]  PROGMEM = "Recalibrating, please wait...";
     
 // image file transfer
-  PROGMEM_STR m_imgReadWholeDisk[]   PROGMEM = "Read whole disk (normally Yes)? Y/N: ";
-  PROGMEM_STR m_imgWriteWholeDisk[]  PROGMEM = "\r\nWrite whole disk image (normally Yes)? Y/N: ";
-  PROGMEM_STR m_imgXmodem1k[]        PROGMEM = "Use XMODEM-1K? Y/N: ";
-  PROGMEM_STR m_imgXmodemPrefix[]    PROGMEM = "XMODEM: ";
-  PROGMEM_STR m_imgXmodem1kPrefix[]  PROGMEM = "XMODEM-1K: ";
-  PROGMEM_STR m_imgXmodemWaitSend[]  PROGMEM = "OK to launch Send\r\nTimeout 4 minutes\r\n";
-  PROGMEM_STR m_imgXmodemWaitRecv[]  PROGMEM = "OK to launch Receive\r\nTimeout 4 minutes\r\n";
-  PROGMEM_STR m_imgXmodemXferEnd[]   PROGMEM = "\rEnd of transfer";
-  PROGMEM_STR m_imgXmodemXferFail[]  PROGMEM = "\rTransfer aborted";
-  PROGMEM_STR m_imgXmodemErrPacket[] PROGMEM = "Invalid XMODEM data packet";
-  PROGMEM_STR m_imgXmodemErrHeader[] PROGMEM = "Invalid WDI file header";
-  PROGMEM_STR m_imgXmodemErrParams[] PROGMEM = "Invalid drive parameters table in WDI file";
-  PROGMEM_STR m_imgXmodemErrSecTyp[] PROGMEM = "Invalid sector data type in WDI file";
-  PROGMEM_STR m_imgXmodemErrMFMRLL[] PROGMEM = "MFM<>RLL mismatch between image and current settings";
-  PROGMEM_STR m_imgXmodemErrCyls[]   PROGMEM = "More physical cylinders in image than configured";
-  PROGMEM_STR m_imgXmodemErrHeads[]  PROGMEM = "More physical heads in image than configured";  
-  PROGMEM_STR m_imgXmodemErrVar1[]   PROGMEM = "WD42C22 cannot format varying sector sizes in 1 track!";
-  PROGMEM_STR m_imgXmodemErrVar2[]   PROGMEM = "WD42C22 cannot format varying cyl/head numbers in 1 track!";
-  PROGMEM_STR m_imgXmodemErrPart[]   PROGMEM = "Nothing to write within the supplied start/end cylinders";
+  PROGMEM_STR m_imgReadWholeDisk[]   PROGMEM = "Read whole disk? (normally Yes) Y/N: ";
+  PROGMEM_STR m_imgWriteWholeDisk[]  PROGMEM = "\r\nWrite whole disk image? (normally Yes) Y/N: ";
+  PROGMEM_STR m_imgDirListing[]      PROGMEM = "\r\nMemory card root directory (filter: *.wdi):\r\n\r\n";  
+  PROGMEM_STR m_imgDirPickRead[]     PROGMEM = "\r\nName of WDI file to read: ";
+  PROGMEM_STR m_imgDirPickWrite[]    PROGMEM = "\r\nName of WDI file to write: ";
+  PROGMEM_STR m_imgDirInvalid[]      PROGMEM = "WDI file or path not found\r\n";
+  PROGMEM_STR m_imgDirOverwrite[]    PROGMEM = "WDI file already exists, overwrite? Y/N: ";
+  PROGMEM_STR m_imgXferEnd[]         PROGMEM = "Processing done";
+  PROGMEM_STR m_imgXferFail[]        PROGMEM = "Processing aborted";
+  PROGMEM_STR m_imgXferCardMissing[] PROGMEM = "No memory card present";
+  PROGMEM_STR m_imgXferCardError[]   PROGMEM = "Memory card or filesystem error";
+  PROGMEM_STR m_imgXferFileError[]   PROGMEM = "Path to the given filename does not exist";
+  PROGMEM_STR m_imgXferErrHeader[]   PROGMEM = "Invalid WDI file header";
+  PROGMEM_STR m_imgXferErrParams[]   PROGMEM = "Invalid drive parameters table in WDI file";
+  PROGMEM_STR m_imgXferErrEnd[]      PROGMEM = "Unexpected end reading WDI file";
+  PROGMEM_STR m_imgXferErrSecTyp[]   PROGMEM = "Invalid sector data type in WDI file";
+  PROGMEM_STR m_imgXferErrMFMRLL[]   PROGMEM = "MFM<>RLL mismatch between image and current settings";
+  PROGMEM_STR m_imgXferErrCyls[]     PROGMEM = "More physical cylinders in image than configured";
+  PROGMEM_STR m_imgXferErrHeads[]    PROGMEM = "More physical heads in image than configured";  
+  PROGMEM_STR m_imgXferErrVar1[]     PROGMEM = "WD42C22 cannot format varying sector sizes in 1 track!";
+  PROGMEM_STR m_imgXferErrVar2[]     PROGMEM = "WD42C22 cannot format varying cyl/head numbers in 1 track!";
+  PROGMEM_STR m_imgXferErrPart[]     PROGMEM = "Nothing to write within the supplied start/end cylinders";
   PROGMEM_STR m_imgWriteHeader[]     PROGMEM = "WDI file created by Winchesterduino, (c) J. Bogin\r\n";
-  PROGMEM_STR m_imgWriteComment[]    PROGMEM = "Add file comment (max %u characters per line)\r\n";
+  PROGMEM_STR m_imgWriteComment[]    PROGMEM = "\r\nAdd file comment (max %u characters per line)\r\n";
   PROGMEM_STR m_imgWriteDone[]       PROGMEM = "Type 2 empty newlines when done\r\n";
   PROGMEM_STR m_imgWriteEnterEsc[]   PROGMEM = "ENTER: continue, Esc: skip...";  
   PROGMEM_STR m_imgBadBlocks[]       PROGMEM = "%lu bad block(s),\r\n";
@@ -501,8 +509,8 @@ private:
                                                   m_uiErrEccCorrected,
 
                                                   m_uiSplash, m_uiBuild, m_uiTestingWDC, m_uiWaitingReady, m_uiSeekingToCyl0,
-                                                  m_uiMinimalMode1, m_uiMinimalMode2, m_uiMinimalMode3, m_uiSetupParams, 
-                                                  m_uiSetupDataMode, m_uiSetupDataVerify, m_uiSetupCylinders, m_uiSetupHeads,
+                                                  m_uiWrongBoardVer, m_uiMinimalMode1, m_uiMinimalMode2, m_uiMinimalMode3,
+                                                  m_uiSetupParams, m_uiSetupDataMode, m_uiSetupDataVerify, m_uiSetupCylinders, m_uiSetupHeads,
                                                   m_uiSetupAskRWC, m_uiSetupCylRWC, m_uiSetupAskPrecomp, m_uiSetupCylPrecomp,
                                                   m_uiSetupAskLZ, m_uiSetupCylLZ, m_uiSetupAskSeek, m_uiSetupAskSave, m_uiSetupAskRemove, 
                                                   m_uiSetupSaved, m_uiSetupSavedLoad, m_uiShowFromCyl, m_uiShowSeekSlow, m_uiShowSeekFast,
@@ -533,12 +541,13 @@ private:
                                                   
                                                   m_parkSuccess, m_parkPowerdownSafe, m_parkContinue, m_parkRecalibrating,
                                                   
-                                                  m_imgReadWholeDisk, m_imgWriteWholeDisk, m_imgXmodem1k, m_imgXmodemPrefix, m_imgXmodem1kPrefix,
-                                                  m_imgXmodemWaitSend, m_imgXmodemWaitRecv, m_imgXmodemXferEnd, m_imgXmodemXferFail,                                                  
-                                                  m_imgXmodemErrPacket, m_imgXmodemErrHeader, m_imgXmodemErrParams, m_imgXmodemErrSecTyp,
-                                                  m_imgXmodemErrMFMRLL, m_imgXmodemErrCyls, m_imgXmodemErrHeads,                                                  
-                                                  m_imgXmodemErrVar1, m_imgXmodemErrVar2, m_imgXmodemErrPart, m_imgWriteHeader, m_imgWriteComment, 
-                                                  m_imgWriteDone, m_imgWriteEnterEsc, m_imgBadBlocks, m_imgBadBlocksKnown, m_imgDataCorrected,
+                                                  m_imgReadWholeDisk, m_imgWriteWholeDisk, m_imgDirListing, m_imgDirPickRead,
+                                                  m_imgDirPickWrite, m_imgDirInvalid, m_imgDirOverwrite, m_imgXferEnd, m_imgXferFail,
+                                                  m_imgXferCardMissing, m_imgXferCardError, m_imgXferFileError, m_imgXferErrHeader, 
+                                                  m_imgXferErrParams, m_imgXferErrEnd, m_imgXferErrSecTyp, m_imgXferErrMFMRLL, 
+                                                  m_imgXferErrCyls, m_imgXferErrHeads, m_imgXferErrVar1, m_imgXferErrVar2, 
+                                                  m_imgXferErrPart, m_imgWriteHeader, m_imgWriteComment,  m_imgWriteDone, 
+                                                  m_imgWriteEnterEsc, m_imgBadBlocks, m_imgBadBlocksKnown, m_imgDataCorrected,
                                                   m_imgDataErrors, m_imgDataErrorsConv, m_imgBadTracks, m_imgOverrideWrite1, 
                                                   m_imgOverrideWrite2, m_imgOverrideWrite3, m_imgBadBloxOption1, m_imgBadBloxOption2,
                                                   m_imgDataErrorsOpt1, m_imgDataErrorsOpt2, m_imgDiskStats, m_imgImageStats, m_imgRunScan,
