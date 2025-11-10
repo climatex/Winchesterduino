@@ -1771,9 +1771,13 @@ DWORD* CalculateSectorsPerTrack(BYTE sdh, // input
       {
         cylinderMismatch = (WORD)data != wdc->getPhysicalCylinder(); // loword: cylinder number 
       }      
-      if (!headMismatch)
-      {
-        headMismatch = wdc->getPhysicalHead() != (sdhScanned & 0xF); // head number in SDH
+      if (!headMismatch) // head number in SDH
+      {       
+#if defined(WDC_FORCE_3BIT_SDH) && (WDC_FORCE_3BIT_SDH == 1)
+        headMismatch = (wdc->getPhysicalHead() & 7) != (sdhScanned & 7);
+#else
+        headMismatch = wdc->getPhysicalHead() != (sdhScanned & 0xF);
+#endif
       }
       if (!variableSectorSize)
       {

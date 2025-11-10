@@ -545,7 +545,9 @@ void WD42C22::setParameter()
   BYTE command = 0;
   if (m_params.Heads > 8)
   {
+#if !defined(WDC_FORCE_3BIT_SDH) || (WDC_FORCE_3BIT_SDH != 1)
     command |= 2; // 4bit head select SDH
+#endif
   }
   if (m_params.DataVerifyMode == MODE_ECC_56BIT)
   {

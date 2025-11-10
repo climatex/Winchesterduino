@@ -6,6 +6,10 @@
 // WDC defines
 #define WD10C20B               0         // set to 1 to disable RLL option and to keep RLL/MFM output floating, if WD10C20B separator is used
                                          // (line RLLMFM treated as OUT to separator chip pin 17, this is GND in a WD10C20B!)
+#define WDC_FORCE_3BIT_SDH     0         // set to 1 to enforce compatibility for old controllers and disks with more than 8 heads (sector ID field of head 8 rolls back to 0, etc.)
+                                         // WARNING: enabling this breaks the reading of disks formatted properly (4-bit head select ID) above head 7 !
+                                         // only use 1 if you want to format or write disk images that contain 4-bit head selects in SDH bytes for use in WD20xx/1xxx
+                                         // this option has no effect for disks or disk images with 8 or fewer heads
 #define WDC_TIMEOUT_HALT       1         // stop execution if the controller is present (RAM check ok), but WCLOCK is missing
 // seeking 
 #define SEEK_PULSE_US          3         // seek pulse length, microseconds
