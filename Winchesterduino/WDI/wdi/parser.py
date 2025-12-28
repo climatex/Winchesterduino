@@ -9,12 +9,13 @@ class WdiParser:
                        verboseTrackListing = None,
                        binaryOutputFileName = None,
                        binaryOutputReinterleave = False,
+                       binaryOutputAlign = False,
                        badBlockFillByte = 0):
                 
         # all files opened OK
         self._initialized = False
         
-        # binary output: what to fill sectors with no address marks or bad block flags
+        # binary output: what to fill sectors with bad block flags
         # sectors with CRC/ECC errors are dumped as they are
         self._badBlockFillByte = badBlockFillByte
         
@@ -42,6 +43,13 @@ class WdiParser:
         except:
             pass
             
+        # binary output align: fill missing sectors and unreadable tracks as bad blocks ?
+        self._binaryOutputAlign = False
+        if (self._initialized) and (self._binaryOutput is not None):
+            self._binaryOutputAlign = binaryOutputAlign
+            if (self._binaryOutputAlign):
+                self._binaryOutputReinterleave = True # if turned on, imply 1:1 reinterleave
+            
     def __del__(self):
         if (self._initialized):
             try:
@@ -50,6 +58,30 @@ class WdiParser:
                     self._binaryOutput.close()
             except:
                 pass
+                
+    def askKey(self, prompt, keys=""):
+        while True:
+            result = input(prompt).strip()
+            if (len(keys) == 0):
+                return result
+            if (len(result) != 1):
+                continue
+            result = result.upper()
+            keys = keys.upper()
+            idx = 0
+            while (idx < len(keys)):
+                if (result[0] == keys[idx]):
+                    return result[0]
+                idx += 1
+                
+    def askRange(self, prompt, min, max):
+        while True:
+            result = input(prompt).strip()
+            if (len(result) == 0):
+                continue
+            num = int(result)
+            if ((num >= min) and (num <= max)):
+                return num
                 
     def isInitialized(self):
         return self._initialized
@@ -198,6 +230,28 @@ class WdiParser:
             pass
         return "unknown"
     
+    def alignSectors(self, logsectors, maxcount):
+        result = [logsectors[0]]
+        added = 0
+        
+        # fill gaps in array, if any
+        for prev, curr in zip(logsectors, logsectors[1:]):            
+            for x in range(prev + 1, curr):
+                if added >= maxcount:
+                    return result + logsectors[logsectors.index(curr):]
+                result.append(x)
+                added += 1
+            result.append(curr)
+            
+        # extend sectors table, maxcount times
+        next_val = result[-1] + 1
+        while added < maxcount:
+            result.append(next_val)
+            next_val += 1
+            added += 1
+            
+        return result
+    
     def parse(self):
     #
         params = self.getImageParams()
@@ -207,6 +261,25 @@ class WdiParser:
         unreadableTracks = 0
         badBlocks = 0
         dataErrors = 0
+        
+        # align missing sectors/unreadable tracks: ask for expected track geometry
+        expectedSpt = 0
+        expectedSectorSize = 0
+        if (self._binaryOutputAlign):
+        #
+            print("Align option (-a) for output binary image specified. Enter expected track geometry:")
+            expectedSpt = self.askRange("Expected sectors per track (1-63): ", 1, 63)
+            expectedSsize = self.askKey("Expected sector size (1)28 (2)56 (5)12 1(K)bytes: ", "125K")
+            if (expectedSsize == '1'):
+                expectedSectorSize = 128
+            elif (expectedSsize == '2'):
+                expectedSectorSize = 256
+            elif (expectedSsize == '5'):
+                expectedSectorSize = 512
+            else:
+                expectedSectorSize = 1024
+            print("")
+        #
 
         while True:
         #  
@@ -306,6 +379,19 @@ class WdiParser:
             #
                 if (self._verboseTrackListing):
                     print("track unreadable (no sector IDs)\n")
+                    
+                # align output binary image with expected track size
+                if (self._binaryOutputAlign):
+                #
+                    data = bytes([self._badBlockFillByte]*expectedSectorSize*expectedSpt)
+                    try:
+                        self._binaryOutput.write(data)                              
+                    except:
+                    #
+                        print("Error writing binary disk image")
+                        return {"result": False}
+                    #
+                #
                   
                 unreadableTracks += 1
                 continue
@@ -485,14 +571,24 @@ class WdiParser:
                     #
                 #
                 
-                # reinterleave to 1:1
+                # reinterleave to 1:1, or -a option set
                 else:
                 #
                     logsectors.sort()
                     
+                    # align output binary image?
+                    if (self._binaryOutputAlign):
+                    #                    
+                        unique = sorted(set(logsectors)) # remove duplicates, if any
+                        logsectors = self.alignSectors(unique, abs(len(unique)-expectedSpt)) # fill gaps and extend table
+                    #
+                    
                     for logicalSectorNo in logsectors:
                     #
-                        data = next((item[1] for item in outputData if item[0] == logicalSectorNo), None)
+                        # alternative data: bad block fill if sector not found in outputData, or none
+                        alternative = None if not self._binaryOutputAlign else bytes([self._badBlockFillByte]*expectedSectorSize)                        
+                        data = next((item[1] for item in outputData if item[0] == logicalSectorNo), alternative)
+                        
                         if (data is not None):
                         #
                             try:

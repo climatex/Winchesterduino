@@ -1,10 +1,11 @@
 # Winchesterduino (c) 2025 J. Bogin, http://boginjr.com
 # WDI disk image inspector
 
-# Syntax: python inspect.py image.wdi [-t] [-e] [-b image.img] [-1]
+# Syntax: python inspect.py image.wdi [-t] [-e] [-b image.img] [-1] [-a]
 #         -t: print detailed sector ID information for each track,
 #         -e: print detailed parse error information, if any,
-#         -b: also save a raw binary disk image (-1: reinterleave to 1:1).
+#         -b: also save a raw binary disk image (-1: reinterleave to 1:1),
+#         -a: aligns missing sectors and unreadable tracks in the output binary image with bad block byte fill.
 
 import sys
 
@@ -20,10 +21,13 @@ def main():
     verboseTrackListing = None
     binaryOutputFileName = None
     binaryOutputReinterleave = False
+    binaryOutputAlign = False
     idx = 2
     while (idx < argc):
         if (sys.argv[idx] == "-1"):
             binaryOutputReinterleave = True
+        elif (sys.argv[idx].lower() == "-a"):
+            binaryOutputAlign = True
         elif ((verboseErrors is None) and (sys.argv[idx].lower() == "-e")):
             verboseErrors = True        
         elif ((verboseTrackListing is None) and (sys.argv[idx].lower() == "-t")):
@@ -39,7 +43,7 @@ def main():
         print("Really?")
         return
     
-    wdi = WdiParser(sys.argv[1], verboseErrors, verboseTrackListing, binaryOutputFileName, binaryOutputReinterleave)
+    wdi = WdiParser(sys.argv[1], verboseErrors, verboseTrackListing, binaryOutputFileName, binaryOutputReinterleave, binaryOutputAlign)
     if (not wdi.isInitialized()):
         print("Cannot open supplied file(s).")
         return
@@ -68,7 +72,8 @@ def main():
     if (binaryOutputFileName is None):
         print("You can also use the -b argument to generate a binary (raw) disk image.")
     else:
-        print("Creating raw disk image", "(original interleave)." if not binaryOutputReinterleave else "(reinterleave to 1:1).")
+        print("Creating raw disk image",
+              "(original interleave)." if (not binaryOutputReinterleave) and (not binaryOutputAlign) else "(reinterleave to 1:1).")
     if (params["partialImage"] == 1):
         print("Warning: this is a partial disk image. See above cylinder range for details.")
     
@@ -76,11 +81,12 @@ def main():
     return
 
 def showUsage():
-    print("Inspects a Winchesterduino disk image.\n\ninspect.py image.wdi [-t] [-e] [-b image.img] [-1]\n");
+    print("Inspects a Winchesterduino disk image.\n\ninspect.py image.wdi [-t] [-e] [-b image.img] [-1] [-a]\n");
     print("  -t\t\tPrint detailed sector ID information per track.")
     print("  -e\t\tPrint detailed parse error information, if any.")
     print("  -b image.img\tCreates a binary (raw) disk image.")
     print("  -1\t\tReorder sectors in the binary image to 1:1 interleave.")
+    print("  -a\t\tAlign missing sectors and unreadable tracks in the output binary image with bad block byte fill.")
     return
       
 def showDriveParameters(params):
