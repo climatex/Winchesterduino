@@ -9,6 +9,8 @@
                        
 #define SD_WRITE(bytes) if (doImageFile.write(doBuffer, (bytes)) == 0) { doProgmemResponseStr = Progmem::imgXferCardError; return false; }
 
+#define SD_FLUSH() if (!doImageFile.sync()) { doProgmemResponseStr = Progmem::imgXferCardError; return false; }
+
 void CommandReadImage();
 void CommandWriteImage();
 

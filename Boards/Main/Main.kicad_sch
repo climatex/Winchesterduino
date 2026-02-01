@@ -7754,7 +7754,7 @@
 		)
 		(uuid "b38b2e85-6334-464d-8701-423665923465")
 	)
-	(text "R1-R5\n470"
+	(text "R5-R1\n470"
 		(exclude_from_sim no)
 		(at 90.17 101.6 0)
 		(effects

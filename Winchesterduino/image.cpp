@@ -458,6 +458,8 @@ bool DoReadDisk()
   // process specified tracks
   for (;;)
   {
+    SD_FLUSH();
+    
     // current physical cylinder and head
     WORD currentCylinder = wdc->getPhysicalCylinder();
     memcpy(&doBuffer[0], &currentCylinder, sizeof(WORD));
